@@ -43,20 +43,83 @@ consumes more of each split).
 | 96 | 81,742 | 8209 | ~10 |
 | 720 | 501,694 | 7585 | ~66 |
 
-The learning-rate schedule then decides how much damage that does. The official
-ETTh1 script uses `lradj type3` — constant for 3 epochs, then ×0.9 every epoch,
-so ~0.17× the initial rate by epoch 20 and ~0.007× by epoch 50. That decay is
-strong implicit regularization: the model largely stops moving before it can
-overfit hard.
+## Two hypotheses tested, both falsified
 
-This replication uses cosine annealing over `T_max=100`, which is nearly flat
-early — still ~0.9× initial at epoch 20. So on the high-capacity H=720 case we
-keep training aggressively straight through the overfitting region. Best-epoch
-checkpointing still fires, but the minimum reached is worse because the model
-rockets past the good region instead of settling into it.
+Recorded because negative results are results, and because the second one only
+looked plausible until it was run.
 
-**Testable prediction:** implementing `lradj type3` should substantially improve
-H=720 and barely move H=96. Not yet run.
+### Hypothesis 1 — the learning-rate schedule. REJECTED.
+
+The official ETTh1 script uses `lradj type3` (constant for 3 epochs, then ×0.9
+per epoch → ~0.18× by epoch 20, ~0.013× by epoch 50). Cosine over `T_max=100` is
+nearly flat early (~0.91× at epoch 20). The prediction was that type3's decay
+would act as implicit regularization and rescue H=720.
+
+It did not. H=720 came back **bit-identical**: best epoch 2, best val 1.4990,
+test 0.4981. The two schedules are identical through epoch 3, and the minimum is
+at epoch 2, so the schedule never gets a chance to act. type3 was also *worse* at
+every other horizon (96: 0.3801, 192: 0.4137, 336: 0.4422).
+
+The mechanism itself is real — type3 pulls H=720's val at epoch 99 from 2.0109
+down to 1.7032 — it simply does not matter, because best-checkpointing already
+banked epoch 2.
+
+**Refined finding: H=720 overfits within two epochs.** No learning-rate schedule
+can address something that fast.
+
+### Hypothesis 2 — weight decay. REJECTED.
+
+Upstream `exp_main.py` uses plain `optim.Adam(params, lr=...)` with no weight
+decay; this repo defaults to `1e-3`. A real unintended deviation, so worth
+matching regardless of predicted direction.
+
+Setting `weight_decay=0` was **worse at every horizon**: 0.3778 / 0.4171 /
+0.4478 / 0.4994. Our `1e-3` was helping. Matching upstream here costs accuracy.
+
+### What the two failures establish
+
+| config | H=720 MSE |
+|---|---:|
+| cosine + wd=1e-3 | 0.4981 |
+| type3 + wd=1e-3 | 0.4981 |
+| cosine + wd=0 | 0.4994 |
+
+Three quite different optimizer/schedule setups land within 0.0013 of each other,
+against the paper's 0.449. The gap is **insensitive to training hyperparameters**,
+so the cause is structural rather than a matter of tuning.
+
+## The open lead: validation and test disagree
+
+| H | best val MSE | test MSE | ratio |
+|---:|---:|---:|---:|
+| 96 | 0.676 | 0.372 | 1.8× |
+| 192 | 0.930 | 0.411 | 2.3× |
+| 336 | 1.182 | 0.439 | 2.7× |
+| 720 | 1.499 | 0.498 | **3.0×** |
+
+Validation is 2–3× harder than test, and the divergence grows with the horizon.
+Checkpoints are selected on validation — so at H=720 the model is chosen at epoch
+2 on the basis of a split that disagrees sharply with the one we report.
+
+If validation is a poor proxy for test here, epoch 2 may simply be a bad choice
+*for test*, which would explain why no training-dynamics fix helps: the problem
+would be **which checkpoint is selected**, not how the model is trained.
+
+Diagnostic, not yet run: log test MSE per epoch (purely for inspection, never for
+selection) and check whether the test-optimal epoch is far from the val-optimal
+one.
+
+## Verification
+
+Every reported number was audited rather than trusted:
+
+- All SLURM tasks `COMPLETED` with exit `0:0` and empty stderr.
+- `best_val_mse == min(val_mse)` and `best_epoch == argmin(val_mse)` exactly.
+- Each saved checkpoint was **reloaded from disk and re-evaluated**, reproducing
+  its reported test MSE to 5 decimal places. This confirms the reported score
+  comes from the best-validation weights rather than the final ones.
+- The config recorded in each result JSON confirms the reduced ETTh1 model
+  (`d_model=16, n_heads=4, d_ff=128`) was actually used, not the defaults.
 
 ## Known deviations from the official setup
 

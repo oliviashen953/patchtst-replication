@@ -49,6 +49,7 @@ class TrainConfig:
     patience: int = 10
     min_delta: float = 0.0
     min_lr: float = 1e-5
+    lradj: str = "cosine"   # "cosine" | "type3"
     seed: int = 42
     device: str = "cpu"
     num_workers: int = 0
@@ -159,9 +160,22 @@ def fit(
         lr=config.learning_rate,
         weight_decay=config.weight_decay,
     )
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-        optimizer, T_max=config.epochs, eta_min=config.min_lr
-    )
+    if config.lradj == "type3":
+        # The official ETTh1 setup: hold the initial rate for 3 epochs, then
+        # decay by 0.9 every epoch. That reaches ~0.17x by epoch 20 and ~0.007x
+        # by epoch 50, which acts as strong implicit regularization -- the model
+        # largely stops moving before it can overfit. Cosine, by contrast, is
+        # nearly flat early (~0.9x at epoch 20).
+        scheduler = torch.optim.lr_scheduler.LambdaLR(
+            optimizer,
+            lr_lambda=lambda epoch: 1.0 if epoch < 3 else 0.9 ** (epoch - 3),
+        )
+    elif config.lradj == "cosine":
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer, T_max=config.epochs, eta_min=config.min_lr
+        )
+    else:
+        raise ValueError(f"unknown lradj {config.lradj!r}; use 'cosine' or 'type3'")
 
     history = History()
     best_state = None

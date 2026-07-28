@@ -66,6 +66,11 @@ myself against after each step. See [NOTICE.md](NOTICE.md) for attribution.
 | 10 | `ablations/` | **Tables 6–7** | Channel-independence on/off, RevIN on/off, lookback sweep |
 | 11 | `cgm/` | — | Apply the finished model to CGM forecasting |
 
+**Status: steps 1–9 complete.** Steps 10 and 11 are not written yet. See
+[RESULTS.md](RESULTS.md) for the ETTh1 reproduction — three of four horizons
+land within 0.01 MSE of the paper, and the fourth is documented along with two
+hypotheses that failed to explain it.
+
 Step 10 matters most. The paper's sharpest claim is that PatchTST *improves*
 with a longer lookback while other Transformers get worse. Reproducing that
 curve says more than matching a single MSE.

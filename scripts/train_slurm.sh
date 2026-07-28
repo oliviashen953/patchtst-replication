@@ -29,6 +29,12 @@ set -euo pipefail
 HORIZONS=(96 192 336 720)
 PRED_LEN=${HORIZONS[$SLURM_ARRAY_TASK_ID]}
 
+# Override at submit time, e.g.
+#     LRADJ=type3 TAG=type3 sbatch scripts/train_slurm.sh
+LRADJ=${LRADJ:-cosine}
+TAG=${TAG:-base}
+WD=${WD:-0.001}
+
 REPO=$HOME/patchtst-replication
 VENV=$HOME/venvs/patchtst-env
 
@@ -41,13 +47,15 @@ export OMP_NUM_THREADS=1
 export OPENBLAS_NUM_THREADS=1
 export MKL_NUM_THREADS=1
 
-echo "host=$(hostname)  task=$SLURM_ARRAY_TASK_ID  pred_len=$PRED_LEN"
+echo "host=$(hostname)  task=$SLURM_ARRAY_TASK_ID  pred_len=$PRED_LEN  lradj=$LRADJ  tag=$TAG"
 nvidia-smi --query-gpu=name,memory.total --format=csv,noheader || true
 
 "$VENV/bin/python" -u experiments/run_etth1.py \
     --pred-len "$PRED_LEN" \
     --device cuda \
     --num-workers 4 \
-    --tag base
+    --lradj "$LRADJ" \
+    --weight-decay "$WD" \
+    --tag "$TAG"
 
 echo "done pred_len=$PRED_LEN"

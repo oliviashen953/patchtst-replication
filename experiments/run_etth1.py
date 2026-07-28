@@ -98,6 +98,10 @@ def main() -> None:
     parser.add_argument("--batch-size", type=int, default=128)
     parser.add_argument("--learning-rate", type=float, default=1e-4)
     parser.add_argument("--patience", type=int, default=100)
+    parser.add_argument("--weight-decay", type=float, default=1e-3,
+                        help="upstream exp_main.py uses plain Adam, i.e. 0.0")
+    parser.add_argument("--lradj", default="cosine", choices=["cosine", "type3"],
+                        help="type3 matches the official ETTh1 script")
     parser.add_argument("--seed", type=int, default=2021)
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     parser.add_argument("--num-workers", type=int, default=4)
@@ -128,7 +132,9 @@ def main() -> None:
         epochs=args.epochs,
         batch_size=args.batch_size,
         learning_rate=args.learning_rate,
+        weight_decay=args.weight_decay,
         patience=args.patience,
+        lradj=args.lradj,
         seed=args.seed,
         device=args.device,
         num_workers=args.num_workers,
