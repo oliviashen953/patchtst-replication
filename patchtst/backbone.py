@@ -62,6 +62,13 @@ class ChannelIndependentBackbone(nn.Module):
         stride: S.
         d_model, n_heads, n_layers, d_ff, dropout: encoder settings.
         revin: apply reversible instance normalization on the way in.
+
+    side note:
+    RevIN is a normalization technique that is reversible,
+    meaning that we can undo the normalization by applying the same normalization again.
+    this is useful because it allows us to undo the normalization when we need to,
+    for example when we need to compute the loss or the metrics.
+    it is also useful because it allows us to use the same normalization for the training and the testing.
     """
 
     def __init__(
@@ -112,29 +119,24 @@ class ChannelIndependentBackbone(nn.Module):
 
         patches = self.patchify(x)          # [B, C, N, P]
 
-        # TODO(you): fold the channel axis into the batch.
+        # THIS IS THE LINE THAT CREATES CHANNEL INDEPENDENCE. After it the
+        # encoder sees B*C separate univariate patch sequences and has no way
+        # to tell which channel any of them came from -- structural, not a mask
+        # or a penalty term.
         #
-        #   flat = patches.reshape(batch * self.n_channels, self.n_patches, -1)
-        #
-        # THIS IS THE LINE THAT CREATES CHANNEL INDEPENDENCE. After it, the
-        # encoder sees B*C separate univariate patch sequences and cannot tell
-        # which channel any of them came from.
-        #
-        # It will fail with "view size is not compatible with input tensor's
-        # size and stride" unless you make it contiguous first -- `patches` is
-        # still the non-contiguous view that Step 3's unfold returned. Call
-        # .contiguous() on it before reshaping.
-        raise NotImplementedError("Step 5: fold channels into the batch")
+        # .contiguous() is required: `patches` is still the strided view that
+        # Step 3's unfold returned, and reshape needs a real memory layout.
+        # Without it: "view size is not compatible with input tensor's size and
+        # stride".
+        flat = patches.contiguous().reshape(
+            batch * self.n_channels, self.n_patches, -1
+        )
+        encoded = self.encoder(flat)        # [B*C, N, d_model]
 
-        # Then:
-        #   encoded = self.encoder(flat)     -> [B*C, N, d_model]
-        #
-        # TODO(you): unfold the channel axis back out.
-        #
-        #   return encoded.reshape(batch, self.n_channels, self.n_patches, self.d_model)
-        #
-        # Getting this reshape's argument ORDER wrong is a silent bug: the
-        # tensor will have the right shape but the channels will be scrambled.
-        # Because you folded as (batch, channels), you must unfold in the same
-        # order. check_step05 tests exactly this by pushing one channel of
-        # constant values through and checking it comes back in the right slot.
+        # Unfold the channel axis back out. The argument ORDER matters and the
+        # bug is silent: we folded as (batch, channels), so we must unfold in
+        # that same order. Swap them and the tensor still has the right shape --
+        # only the channels are scrambled, and nothing raises.
+        return encoded.reshape(
+            batch, self.n_channels, self.n_patches, self.d_model
+        )
