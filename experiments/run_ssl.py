@@ -215,7 +215,8 @@ def run_downstream(args) -> None:
         trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
         print(f"[{args.name}] probing {trainable:,}/{model.n_parameters():,} "
               f"params", flush=True)
-        history = fit(model, train_set, val_set, make_config(args.probe_epochs, "probe"))
+        history = fit(model, train_set, val_set,
+                      make_config(args.probe_epochs, "probe"), probe_set=test_set)
         phases.append(("probe", history))
 
     elif args.stage == "finetune":
@@ -225,14 +226,17 @@ def run_downstream(args) -> None:
         # early gradients through the pretrained features and distorts them.
         freeze_backbone(model, True)
         phases.append(("probe", fit(model, train_set, val_set,
-                                    make_config(args.warmup_epochs, "warmup"))))
+                                    make_config(args.warmup_epochs, "warmup"),
+                                    probe_set=test_set)))
         freeze_backbone(model, False)
         phases.append(("finetune", fit(model, train_set, val_set,
-                                       make_config(args.finetune_epochs, "ft"))))
+                                       make_config(args.finetune_epochs, "ft"),
+                                       probe_set=test_set)))
 
     else:  # scratch
         history = fit(model, train_set, val_set,
-                      make_config(args.scratch_epochs, "scratch"))
+                      make_config(args.scratch_epochs, "scratch"),
+                      probe_set=test_set)
         phases.append(("scratch", history))
 
     final_config = make_config(1, "eval")
@@ -261,7 +265,18 @@ def run_downstream(args) -> None:
              "epochs_run": len(h.val_mse),
              "best_epoch": h.best_epoch,
              "best_val_mse": h.best_val_mse,
-             "val_mse": h.val_mse}
+             "val_mse": h.val_mse,
+             # Diagnostic only -- see fit()'s docstring. `probe_best_epoch` is
+             # the epoch a test-selected oracle WOULD have kept; the gap between
+             # it and `best_epoch` is the cost of selecting on this val split.
+             "probe_mse": h.probe_mse,
+             "probe_best_epoch": (
+                 min(range(len(h.probe_mse)), key=h.probe_mse.__getitem__)
+                 if h.probe_mse else None),
+             "probe_best_mse": min(h.probe_mse) if h.probe_mse else None,
+             "probe_at_val_best": (
+                 h.probe_mse[h.best_epoch]
+                 if h.probe_mse and 0 <= h.best_epoch < len(h.probe_mse) else None)}
             for name, h in phases
         ],
         "wall_seconds": elapsed,
@@ -281,6 +296,15 @@ def run_downstream(args) -> None:
           f"{record['delta_mse']:+.4f})  |  MAE {metrics['mae']:.4f} "
           f"(paper {paper['mae']:.3f}, {record['delta_mae']:+.4f})  "
           f"{elapsed / 60:.1f} min", flush=True)
+
+    last = record["phases"][-1]
+    if last["probe_best_epoch"] is not None:
+        print(f"[{args.name}] selection: val picked epoch {last['best_epoch']} "
+              f"(test there {last['probe_at_val_best']:.4f}); a test-oracle would "
+              f"have picked epoch {last['probe_best_epoch']} "
+              f"(test {last['probe_best_mse']:.4f}), i.e. "
+              f"{last['probe_at_val_best'] - last['probe_best_mse']:+.4f} left on "
+              f"the table by selecting on val", flush=True)
 
 
 def main() -> None:

@@ -61,6 +61,10 @@ class History:
     train_loss: list[float] = field(default_factory=list)
     val_mse: list[float] = field(default_factory=list)
     val_mae: list[float] = field(default_factory=list)
+    # Per-epoch TEST error, recorded only when fit() is given a probe_set.
+    # Diagnostic output -- nothing in this file ever reads it back.
+    probe_mse: list[float] = field(default_factory=list)
+    probe_mae: list[float] = field(default_factory=list)
     lr: list[float] = field(default_factory=list)
     epoch_seconds: list[float] = field(default_factory=list)
     best_epoch: int = -1
@@ -143,8 +147,22 @@ def fit(
     train_set,
     val_set,
     config: TrainConfig,
+    probe_set=None,
 ) -> History:
-    """Train with cosine LR decay and early stopping on validation MSE."""
+    """Train with cosine LR decay and early stopping on validation MSE.
+
+    `probe_set` is a diagnostic hook, and it is the one place in this repo where
+    the test split is touched during training. Pass it and every epoch's test
+    MSE/MAE is recorded into `history.probe_mse` / `.probe_mae` -- but the
+    selection rule below reads `metrics["mse"]` from the VALIDATION loader only,
+    and never the probe. The point is to be able to ask, after the fact, whether
+    the val-optimal epoch and the test-optimal epoch are the same epoch. If they
+    are far apart, the reported number is limited by checkpoint *selection*
+    rather than by training.
+
+    Look but do not touch: the moment a probe value influences what you keep,
+    the test split stops being a test split.
+    """
     torch.manual_seed(config.seed)
     device = torch.device(config.device)
     model = model.to(device)
@@ -156,6 +174,20 @@ def fit(
     val_loader = DataLoader(
         val_set, batch_size=config.batch_size, shuffle=False,
         num_workers=config.num_workers,
+    )
+    # The probe must not perturb training, and `shuffle=False` is NOT enough to
+    # guarantee that: DataLoader draws one number from the *global* RNG every
+    # time an iterator is created, to seed its workers -- shuffling or not. So
+    # probing each epoch would shift the train loader's shuffle order from the
+    # next epoch onward, and the instrumented run would stop being comparable to
+    # the uninstrumented one. Giving the probe its own generator keeps the draw
+    # off the global stream. (Measured: without this, val MSE diverges from the
+    # unprobed run by ~1e-5 by epoch 2 -- small, but it is a different run.)
+    probe_loader = (
+        DataLoader(probe_set, batch_size=config.batch_size, shuffle=False,
+                   num_workers=config.num_workers,
+                   generator=torch.Generator().manual_seed(config.seed))
+        if probe_set is not None else None
     )
 
     optimizer = torch.optim.Adam(
@@ -195,6 +227,10 @@ def fit(
         history.train_loss.append(loss)
         history.val_mse.append(metrics["mse"])
         history.val_mae.append(metrics["mae"])
+        if probe_loader is not None:
+            probe = evaluate(model, probe_loader, device)
+            history.probe_mse.append(probe["mse"])
+            history.probe_mae.append(probe["mae"])
         history.lr.append(optimizer.param_groups[0]["lr"])
         history.epoch_seconds.append(time.time() - started)
 
