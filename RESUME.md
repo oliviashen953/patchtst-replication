@@ -47,6 +47,12 @@ sbatch --dependency=afterok:$PRE --array=1-12 scripts/ssl_slurm.sh
 python experiments/collate_ssl.py
 ```
 
+**Submitted 2026-07-28 12:36**, both still `PENDING` on the a40 queue:
+`17423191` (array 0, pretrain, est. start 13:21) and `17423192` (array 1-12,
+`afterok` dependency on it). A 30-min `ssl_smoke` job `17423134` is queued ahead
+of them (est. start 13:10). Collate with `python experiments/collate_ssl.py`
+once `17423192` clears.
+
 Task 0 is pretraining (100 epochs, masked reconstruction); tasks 1-12 are
 linear probing / fine-tuning / from-scratch at H = 96, 192, 336, 720. Results
 land in `experiments/results_ssl/`; the JSONs are tracked, the `.pt`
