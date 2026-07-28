@@ -14,7 +14,7 @@ previous:            016hqEA1UFAX87UR4DuaBt1u
 ## Where everything is
 
 ```
-~/patchtst-replication      this repo, 28 commits, local only (NO remote yet)
+~/patchtst-replication      this repo, 33 commits, local only (NO remote yet)
 ~/PatchTST_upstream         official code, reference/answer-key only
 ~/venvs/patchtst-env        python3.11 + torch 2.13.0+cu130
 ~/Downloads/patchtst_2211.14730.pdf
