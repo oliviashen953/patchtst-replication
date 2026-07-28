@@ -76,8 +76,9 @@ in [RESULTS.md](RESULTS.md); each step is written up in
 Four findings, none of them a clean win:
 
 - **Step 9 — ETTh1.** Three of four horizons land within 0.01 MSE of the paper
-  (96 and 192 slightly below it). H=720 misses by +0.049, and two hypotheses
-  that would have explained it were tested and falsified.
+  (96 and 192 slightly below it). H=720 misses by +0.049 — traced to checkpoint
+  selection, not the implementation: 0.047 of that gap is validation stopping at
+  epoch 2 while test error keeps falling to epoch 10.
 - **Step 10 — ablations.** RevIN reproduces. The lookback claim reproduces in
   *direction* but not monotonically — it flattens past L=336. Channel
   independence does **not** reproduce Table 7 here: mixing ties at short

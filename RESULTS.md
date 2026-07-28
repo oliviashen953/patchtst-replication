@@ -90,7 +90,7 @@ so whatever causes it is not a matter of tuning. The next section names a
 candidate — and Step 12 later found that candidate doing exactly this, at scale,
 on a different set of runs.
 
-## The open lead: validation and test disagree
+## The cause: validation and test disagree
 
 | H | best val MSE | test MSE | ratio |
 |---:|---:|---:|---:|
@@ -111,20 +111,46 @@ The diagnostic: log test MSE per epoch (purely for inspection, never for
 selection) and check whether the test-optimal epoch is far from the val-optimal
 one.
 
-**Update — Step 12 ran exactly this diagnostic on a different set of runs, and
-the answer was yes, emphatically.** On the self-supervised arms, selecting on
-this validation split cost up to 0.2189 MSE, and at H=720 one arm's validation
-picked epoch 0 while its test error kept falling to epoch 19. See
-[Step 12](#step-12--masked-self-supervised-pretraining-and-what-a-validation-split-can-hide).
+## Lead closed: the H=720 gap is checkpoint selection
 
-That makes "the H=720 gap is a property of my implementation" the *less* likely
-reading. It is now more likely a property of the benchmark. **The confirming run
-— Step 9 with `--probe-test` — is queued but has not landed, so this section
-still reports the val-selected numbers and the gap above stands as measured.**
-Re-run it with:
+Run with `PROBE=1`, all four horizons reproduce their test MSE to the last digit
+(Δ = 0.0e+00, four for four — the probe does not disturb training), and the
+per-epoch test curve answers the question outright.
+
+| H | val picked | oracle would pick | test @ val | test @ oracle | selection cost | paper | oracle − paper |
+|---:|---:|---:|---:|---:|---:|---:|---:|
+| 96 | 51 | 93 | 0.3720 | 0.3710 | 0.0010 | 0.375 | −0.0040 |
+| 192 | 19 | 26 | 0.4110 | 0.4096 | 0.0014 | 0.414 | −0.0044 |
+| 336 | 10 | 14 | 0.4391 | 0.4358 | 0.0032 | 0.431 | +0.0048 |
+| 720 | **2** | **10** | 0.4981 | **0.4508** | **0.0473** | 0.449 | **+0.0018** |
+
+The selection cost is monotone in the horizon — 0.0010, 0.0014, 0.0032, 0.0473 —
+which is the same shape as the val/test ratio in the table above, and it is not a
+coincidence: they are two views of one fact.
+
+**At H=720 the +0.0491 gap is +0.0473 of selection error.** Validation stops at
+epoch 2; test error keeps falling to epoch 10, where the model sits at 0.4508
+against the paper's 0.449. Hold the selection rule fixed and all four horizons
+land within ±0.005 of the published numbers.
+
+This retires the earlier "structural" reading. It also explains why the two
+tuning fixes failed: `lradj type3` and `weight_decay=0` both change *training*,
+and training was never the problem. No schedule can rescue a checkpoint chosen by
+a split that disagrees with the one being reported.
+
+**The oracle column selects on test and is not a reportable result.** The
+replication table at the top of this section stands as measured — validation-
+selected, +0.0491 at H=720, honestly out. What the oracle column establishes is
+narrower and worth more: the residual is a property of the ETTh1 benchmark's
+validation split, not of this implementation.
+
+The same mechanism, measured independently and far more violently, is in
+[Step 12](#step-12--masked-self-supervised-pretraining-and-what-a-validation-split-can-hide),
+where it cost 0.2189 MSE and inverted the paper's conclusion.
 
 ```bash
-PROBE=1 sbatch scripts/train_slurm.sh
+PROBE=1 sbatch scripts/train_slurm.sh     # array 0-3, ~2.3 min each
+python experiments/collate.py --tag base
 ```
 
 ## Verification
