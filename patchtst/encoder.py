@@ -58,9 +58,9 @@ class PatchEmbedding(nn.Module):
             raise ValueError("patch_len and d_model must be positive")
 
         # TODO(you): create the projection.
-        #
-        # One nn.Linear from patch_len to d_model. Name it self.projection.
-        raise NotImplementedError("Step 4: create PatchEmbedding.projection")
+        # one nn.Linear from patch_len to d_model
+        self.projection = nn.Linear(self.patch_len, self.d_model)
+    
 
     def forward(self, patches: torch.Tensor) -> torch.Tensor:
         if patches.shape[-1] != self.patch_len:
@@ -94,7 +94,28 @@ class LearnablePositionEncoding(nn.Module):
         # An nn.Parameter of shape [n_patches, d_model], named self.W_pos.
         # Initialise it small -- torch.empty(...) then nn.init.uniform_(..., -0.02, 0.02).
         # A large init would swamp the patch embeddings at the start of training.
-        raise NotImplementedError("Step 4: create LearnablePositionEncoding.W_pos")
+        self.W_pos = nn.Parameter(torch.empty(self.n_patches, self.d_model))
+        nn.init.uniform_(self.W_pos, -0.02, 0.02)
+        # WHY a position encoding at all: self-attention is permutation
+        # invariant. It is a weighted sum over all tokens and has no notion of
+        # order -- shuffle the patches and the outputs come out merely shuffled,
+        # not different. For a time series that is fatal, since order IS the
+        # signal. Adding W_pos breaks that symmetry.
+        #
+        # FIXED (sinusoidal) vs LEARNABLE, honestly:
+        #   sinusoidal  - a formula of the position index, 0 parameters, and it
+        #                 EXTRAPOLATES: defined for any index, so it survives a
+        #                 sequence longer than anything seen in training.
+        #   learnable   - a plain [n_patches, d_model] table of weights. More
+        #                 expressive, but it CANNOT extrapolate: ask for row 43
+        #                 of a 42-row table and it fails.
+        #
+        # Extrapolation is sinusoidal's advantage, not learnable's. PatchTST can
+        # use learnable precisely because that advantage is worthless here:
+        # n_patches is pinned by (L, P, S) = (336, 16, 8) -> always 42, in both
+        # training and test. There is no longer sequence to generalize to, so we
+        # give up nothing and gain expressiveness.
+
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         if x.shape[-2:] != (self.n_patches, self.d_model):
@@ -107,7 +128,7 @@ class LearnablePositionEncoding(nn.Module):
         # self.W_pos is [n_patches, d_model] and x is [..., n_patches, d_model],
         # so it broadcasts over every leading dimension with no reshaping.
         # Return self.dropout(x + self.W_pos).
-        raise NotImplementedError("Step 4: implement LearnablePositionEncoding.forward")
+        return self.dropout(x + self.W_pos)
 
 
 class PatchEncoder(nn.Module):
@@ -178,8 +199,9 @@ class PatchEncoder(nn.Module):
         #   1. x = self.embed(patches)      -> [batch, n_patches, d_model]
         #   2. x = self.position(x)         -> same shape, W_pos added
         #   3. x = self.encoder(x)          -> same shape, attention applied
-        #
+        x = self.embed(patches)
+        x = self.position(x)
+        return self.encoder(x)
         # Return x. No mask is needed: every patch may attend to every other
         # patch. This is an ENCODER, not a causal decoder -- we are not
         # generating the forecast one step at a time.
-        raise NotImplementedError("Step 4: implement PatchEncoder.forward")
