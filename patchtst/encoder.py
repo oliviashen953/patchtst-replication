@@ -57,11 +57,10 @@ class PatchEmbedding(nn.Module):
         if self.patch_len < 1 or self.d_model < 1:
             raise ValueError("patch_len and d_model must be positive")
 
-        # Step 4 exercise — create the projection.
+        # TODO(you): create the projection.
         # one nn.Linear from patch_len to d_model
-        #
-        # Answer:
         self.projection = nn.Linear(self.patch_len, self.d_model)
+    
 
     def forward(self, patches: torch.Tensor) -> torch.Tensor:
         if patches.shape[-1] != self.patch_len:
@@ -90,34 +89,24 @@ class LearnablePositionEncoding(nn.Module):
             raise ValueError("dropout must be in [0, 1)")
         self.dropout = nn.Dropout(dropout)
 
-        # Step 4 exercise — create the learnable position table.
+        # TODO(you): create the learnable position table.
         #
         # An nn.Parameter of shape [n_patches, d_model], named self.W_pos.
         # Initialise it small -- torch.empty(...) then nn.init.uniform_(..., -0.02, 0.02).
         # A large init would swamp the patch embeddings at the start of training.
-        #
-        # Answer:
         self.W_pos = nn.Parameter(torch.empty(self.n_patches, self.d_model))
         nn.init.uniform_(self.W_pos, -0.02, 0.02)
-        # WHY a position encoding at all: self-attention is permutation
-        # invariant. It is a weighted sum over all tokens and has no notion of
-        # order -- shuffle the patches and the outputs come out merely shuffled,
-        # not different. For a time series that is fatal, since order IS the
-        # signal. Adding W_pos breaks that symmetry.
-        #
-        # FIXED (sinusoidal) vs LEARNABLE, honestly:
-        #   sinusoidal  - a formula of the position index, 0 parameters, and it
-        #                 EXTRAPOLATES: defined for any index, so it survives a
-        #                 sequence longer than anything seen in training.
-        #   learnable   - a plain [n_patches, d_model] table of weights. More
-        #                 expressive, but it CANNOT extrapolate: ask for row 43
-        #                 of a 42-row table and it fails.
-        #
-        # Extrapolation is sinusoidal's advantage, not learnable's. PatchTST can
-        # use learnable precisely because that advantage is worthless here:
-        # n_patches is pinned by (L, P, S) = (336, 16, 8) -> always 42, in both
-        # training and test. There is no longer sequence to generalize to, so we
-        # give up nothing and gain expressiveness.
+        # the learnable position encoding, compared to fixed position encoding, 
+        # is that it is learnable, so it can be updated during training.
+        # the reason we use a learnable position encoding is that it is more flexible
+        # and can be updated during training.
+        # for example, if we have a time series with 100 timesteps,
+        #  and we use a fixed position encoding, we will have 100 positions,
+        #  and if we have a time series with 1000 timesteps, we will have 1000 positions.
+        #  this is not flexible and cannot be updated during training.
+        # but if we use a learnable position encoding, 
+        # we can have a different position for each timestep,
+        # for exa
 
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -126,13 +115,11 @@ class LearnablePositionEncoding(nn.Module):
                 f"expected [..., {self.n_patches}, {self.d_model}], "
                 f"got {tuple(x.shape)}"
             )
-        # Step 4 exercise — add the position table and apply dropout.
+        # TODO(you): add the position table and apply dropout.
         #
         # self.W_pos is [n_patches, d_model] and x is [..., n_patches, d_model],
         # so it broadcasts over every leading dimension with no reshaping.
         # Return self.dropout(x + self.W_pos).
-        #
-        # Answer:
         return self.dropout(x + self.W_pos)
 
 
@@ -199,13 +186,11 @@ class PatchEncoder(nn.Module):
             raise ValueError(
                 f"expected [batch, n_patches, patch_len], got {tuple(patches.shape)}"
             )
-        # Step 4 exercise — run the three stages in order.
+        # TODO(you): run the three stages in order.
         #
         #   1. x = self.embed(patches)      -> [batch, n_patches, d_model]
         #   2. x = self.position(x)         -> same shape, W_pos added
         #   3. x = self.encoder(x)          -> same shape, attention applied
-        #
-        # Answer:
         x = self.embed(patches)
         x = self.position(x)
         return self.encoder(x)
