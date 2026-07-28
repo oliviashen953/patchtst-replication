@@ -30,6 +30,6 @@
     "seed": 2021,
     "device": "cuda",
     "num_workers": 2,
-    "checkpoint": "/sfs/gpfs/tardis/home/avj7cu/patchtst-replication/experiments/results_cgm/cgm_ci_control_s2021.pt"
+    "checkpoint": "experiments/results_cgm/cgm_ci_control_s2021.pt"
   }
 }

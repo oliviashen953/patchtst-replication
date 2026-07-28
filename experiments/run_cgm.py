@@ -47,6 +47,7 @@ from patchtst.cgm import FEATURE_COLS, make_cgm_datasets
 from patchtst.model import PatchTST
 from patchtst.train import TrainConfig, fit
 
+ROOT = Path(__file__).resolve().parent.parent
 RESULTS = Path(__file__).resolve().parent / "results_cgm"
 
 
@@ -140,7 +141,10 @@ def main() -> None:
         "seq_len": args.seq_len, "pred_len": args.pred_len,
         "seed": args.seed, "data_seed": args.data_seed,
         "wall_seconds": elapsed,
-        "train": asdict(config),
+        # Repo-relative: an absolute path here would bake the machine's home
+        # directory into a committed result file.
+        "train": {**asdict(config),
+                  "checkpoint": str(Path(config.checkpoint).relative_to(ROOT))},
     }
     (RESULTS / f"{name}.json").write_text(json.dumps(record, indent=2))
 

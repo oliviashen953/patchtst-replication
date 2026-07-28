@@ -45,7 +45,7 @@
     "seed": 2021,
     "device": "cuda",
     "num_workers": 4,
-    "checkpoint": "/sfs/gpfs/tardis/home/avj7cu/patchtst-replication/experiments/results/etth1_type3_h96_s2021.pt"
+    "checkpoint": "experiments/results/etth1_type3_h96_s2021.pt"
   },
   "git_commit": "4957c20",
   "torch": "2.13.0+cu130",

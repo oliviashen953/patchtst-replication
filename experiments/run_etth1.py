@@ -175,7 +175,10 @@ def main() -> None:
         "wall_seconds": elapsed,
         "n_parameters": model.n_parameters(),
         "model": model_kwargs,
-        "train": asdict(config),
+        # Repo-relative: an absolute path here would bake the machine's home
+        # directory into a committed result file.
+        "train": {**asdict(config),
+                  "checkpoint": str(Path(config.checkpoint).relative_to(ROOT))},
         "git_commit": git_commit(),
         "torch": torch.__version__,
         "device_name": (
