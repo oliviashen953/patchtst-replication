@@ -93,6 +93,18 @@ class Patchify(nn.Module):
         stride: S, how far the window advances. S == P gives no overlap;
             S < P gives overlapping patches (the paper uses P=16, S=8).
         pad_end: replicate the final timestep `stride` times to gain one patch.
+
+    Example (1 batch, 10 timesteps, 1 channel; P=2, S=1, no padding):
+
+        >>> x = torch.arange(1., 11.).reshape(1, 10, 1)   # [B=1, T=10, C=1]
+        >>> Patchify(patch_len=2, stride=1, pad_end=False)(x).shape
+        torch.Size([1, 1, 9, 2])
+
+    The output axes are [B, C, N, P], giving the 9 overlapping patches
+    [1,2], [2,3], [3,4], ... [9,10].
+
+    Note the input must be 3-D. A bare [1, 10] is rejected: the channel axis
+    is not optional, because channel independence in Step 5 depends on it.
     """
 
     def __init__(self, patch_len: int = 16, stride: int = 8, pad_end: bool = True):
