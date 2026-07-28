@@ -1,0 +1,17 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.ipynb_checkpoints/
+
+# Datasets are downloaded, not committed.
+data/*.csv
+data/*.npz
+
+# Run artifacts
+checkpoints/
+outputs/
+runs/
+*.pt
+*.pth
+*.log
