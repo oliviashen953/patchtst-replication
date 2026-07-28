@@ -79,22 +79,23 @@ class RevIN(nn.Module):
             raise ValueError(f"expected [batch, time, channels], got {tuple(x.shape)}")
 
         # TODO(you): compute the per-instance statistics over the TIME axis.
-        #
-        # dim=1 is time. Keep the dim so the tensors broadcast back over x:
-        # both should end up shaped [batch, 1, channels].
-        #
-        #   if self.subtract_last:  center = x[:, -1:, :]
-        #   else:                   center = x.mean(dim=1, keepdim=True)
-        #
-        #   var    = x.var(dim=1, keepdim=True, unbiased=False)
-        #   stdev  = torch.sqrt(var + self.eps)
-        #
-        # Store them on self._center / self._stdev -- denormalize() needs them.
-        # Use .detach() so gradients do not flow through the statistics.
-        raise NotImplementedError("Step 2: implement normalize")
+        # so if subtract_last is True, we subtract the last value of the time axis, 
+        # otherwise we subtract the mean of the time axis.
+        # then we compute the variance of the time axis.
+        if self.subtract_last:
+              center = x[:, -1:, :].detach()
+        else:
+            center = x.mean(dim=1, keepdim=True).detach()
+        var = x.var(dim=1, keepdim=True, unbiased=False).detach()
+        stdev = torch.sqrt(var + self.eps)
 
-        # Then: subtract the center, divide by stdev, and if self.affine apply
-        #       x = x * self.weight + self.bias
+        self._center = center
+        self._stdev = stdev
+
+        x = (x - center) / stdev
+        if self.affine:
+            x = x * self.weight + self.bias
+        return x
 
     def denormalize(self, x: torch.Tensor) -> torch.Tensor:
         """Undo normalize(), using the statistics it stored.
@@ -106,11 +107,9 @@ class RevIN(nn.Module):
         if self._center is None or self._stdev is None:
             raise RuntimeError("call normalize() before denormalize()")
 
-        # TODO(you): invert normalize(), in the reverse order.
-        #
-        #   1. if self.affine: undo the affine step first.
-        #        x = (x - self.bias) / (self.weight + self.eps * self.eps)
-        #      The extra eps^2 guards against a learned weight collapsing to 0.
-        #   2. x = x * self._stdev
-        #   3. x = x + self._center
-        raise NotImplementedError("Step 2: implement denormalize")
+        # Invert normalize() in REVERSE order: affine, then scale, then center.
+        if self.affine:
+            x = (x - self.bias) / (self.weight + self.eps * self.eps)
+        x = x * self._stdev
+        x = x + self._center
+        return x

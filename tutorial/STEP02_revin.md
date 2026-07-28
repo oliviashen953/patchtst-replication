@@ -3,8 +3,8 @@
 ## The paper, first
 
 PatchTST §4.2 mentions this in one sentence — "we apply reversible instance
-normalization" — and cites Kim et al. (ICLR 2022). One sentence, but the
-ablation in Table 7 shows it is worth a lot. Do not skip it.
+normalization" — and cites Kim et al. (ICLR 2022) (https://openreview.net/pdf?id=cGDAkQo1C0p)". 
+One sentence, but the ablation in Table 7 shows it is worth a lot. Do not skip it.
 
 **The problem is distribution shift.** A long series drifts. The mean oil
 temperature in July is not the mean in December. A model that learned July's
