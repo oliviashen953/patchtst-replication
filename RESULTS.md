@@ -142,3 +142,76 @@ mkdir -p logs
 sbatch scripts/train_slurm.sh     # array 0-3, one horizon each
 python experiments/collate.py
 ```
+
+---
+
+# Step 10 — Ablations
+
+13 runs, single seed, ~2 min each on an A40. Differences below 0.002 MSE are
+reported as ties.
+
+## A. Channel independence vs channel mixing (ETTh1, L=336)
+
+| H | independent | mixing | Δ | verdict |
+|---:|---:|---:|---:|---|
+| 96 | 0.3720 | 0.3719 | −0.0000 | tie |
+| 192 | 0.4110 | 0.4101 | −0.0009 | tie |
+| 336 | 0.4391 | 0.4348 | −0.0042 | **mixing** |
+| 720 | 0.4981 | **0.4540** | **−0.0441** | **mixing** |
+
+**This does not reproduce the paper's Table 7**, which finds channel
+independence better. Here it is a tie at short horizons and mixing wins clearly
+at long ones.
+
+The H=720 number is the striking part. Channel mixing gives 0.4540 against the
+paper's 0.449 — a gap of +0.005, where our channel-independent run sits at
++0.049. So the horizon that would not replicate under channel independence
+very nearly replicates under mixing.
+
+Two readings, and this run cannot distinguish them:
+
+1. Channel mixing genuinely helps on ETTh1 at long horizons, and the paper's
+   ablation does not cover this exact configuration (reduced ETTh1 model,
+   L=336, our schedule).
+2. Our channel-*independent* path is limited in some way we have not found, and
+   mixing incidentally routes around it.
+
+Reading 2 deserves weight precisely because it would also explain the Step 9
+H=720 gap, which survived two other hypotheses. Before treating this as a
+finding it needs multiple seeds and a direct check of the channel-independent
+path against the official implementation.
+
+## B. RevIN (ETTh1, L=336)
+
+| H | with RevIN | without | Δ | verdict |
+|---:|---:|---:|---:|---|
+| 96 | 0.3720 | 0.3745 | +0.0025 | RevIN helps |
+| 192 | 0.4110 | 0.4165 | +0.0055 | RevIN helps |
+| 336 | 0.4391 | 0.4463 | +0.0072 | RevIN helps |
+| 720 | 0.4981 | 0.4970 | −0.0011 | tie |
+
+RevIN helps at three of four horizons, with the benefit growing from 96 to 336.
+Small in absolute terms, consistent with the paper treating it as a component
+rather than a contribution.
+
+## C. Lookback sweep (ETTh1, H=96)
+
+| L | test MSE | trend |
+|---:|---:|---|
+| 96 | 0.3873 | |
+| 192 | 0.3801 | better |
+| 336 | **0.3720** | better |
+| 512 | 0.3731 | flat |
+| 720 | 0.3829 | **worse** |
+
+**Partial reproduction.** MSE improves steadily from L=96 to L=336 (0.3873 →
+0.3720), which supports the paper's claim over that range. But it flattens at
+512 and degrades at 720, whereas the paper reports monotone gains — its
+PatchTST/64 (L=512) beats PatchTST/42 (L=336) on ETTh1.
+
+Two plausible causes, untested: the reduced ETTh1 model (d_model=16) may lack
+the capacity to exploit a very long history, and a longer lookback consumes
+training windows, so L=720 trains on fewer examples.
+
+The direction of the paper's central claim is reproduced; its monotonicity is
+not.

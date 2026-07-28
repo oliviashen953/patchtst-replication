@@ -12,13 +12,30 @@ RESULTS = Path(__file__).resolve().parent / "results"
 HORIZONS = [96, 192, 336, 720]
 LOOKBACKS = [96, 192, 336, 512, 720]
 
+# Below this, treat a difference as a tie: everything here is single-seed.
+TIE = 0.002
 
-def load() -> dict:
-    out = {}
-    for path in RESULTS.glob("*.json"):
-        r = json.loads(path.read_text())
-        out[r["tag"]] = r
-    return out
+
+def load() -> list[dict]:
+    return [json.loads(p.read_text()) for p in RESULTS.glob("*.json")]
+
+
+def pick(runs, tag, pred_len=None, seq_len=None):
+    """Results are keyed by (tag, pred_len) -- a tag alone is NOT unique,
+    since the four baseline horizons all share tag 'base'."""
+    for r in runs:
+        if r["tag"] != tag:
+            continue
+        if pred_len is not None and r["pred_len"] != pred_len:
+            continue
+        if seq_len is not None and r["model"].get("seq_len") != seq_len:
+            continue
+        return r["test"]["mse"]
+    return None
+
+
+def f(v, w=12):
+    return f"{v:{w}.4f}" if v is not None else f"{'--':>{w}}"
 
 
 def main() -> None:
@@ -26,89 +43,103 @@ def main() -> None:
     if not runs:
         raise SystemExit(f"no results in {RESULTS}")
 
-    def mse(tag):
-        r = runs.get(tag)
-        return r["test"]["mse"] if r else None
+    print("\nAll single-seed. Differences below "
+          f"{TIE} MSE are reported as ties.\n")
 
-    def fmt(v):
-        return f"{v:.4f}" if v is not None else "   --  "
-
-    print("\n" + "=" * 66)
+    # ---------------------------------------------------------------- A
+    print("=" * 70)
     print("A. Does channel independence matter?   (ETTh1, L=336)")
-    print("=" * 66)
-    print(f"{'H':>5} {'independent':>13} {'mixing':>10} {'Δ':>9}  verdict")
-    print("-" * 66)
-    wins = 0
-    n = 0
+    print("=" * 70)
+    print(f"{'H':>5} {'independent':>12} {'mixing':>12} {'Δ':>9}  verdict")
+    print("-" * 70)
+    ci_wins = mix_wins = ties = 0
     for h in HORIZONS:
-        a, b = mse("base") if h == 96 else None, mse(f"mix_h{h}")
-        a = mse("base") if h == 96 else None
-        # base run is stored per-horizon under tag "base"; find it
-        base = next((r for r in runs.values()
-                     if r["tag"] == "base" and r["pred_len"] == h), None)
-        a = base["test"]["mse"] if base else None
+        a, b = pick(runs, "base", h), pick(runs, f"mix_h{h}", h)
         if a is None or b is None:
-            print(f"{h:>5} {fmt(a):>13} {fmt(b):>10}")
+            print(f"{h:>5} {f(a)} {f(b)}")
             continue
-        n += 1
-        if a < b:
-            wins += 1
-        verdict = "independence wins" if a < b else "MIXING wins"
-        print(f"{h:>5} {fmt(a):>13} {fmt(b):>10} {b - a:>+9.4f}  {verdict}")
-    if n:
-        print(f"\n  channel independence wins {wins}/{n} horizons")
-        if wins == n:
-            print("  -> reproduces the paper's ablation: on ETT-style data, where")
-            print("     channels are parallel sensors, isolating them helps.")
-
-    print("\n" + "=" * 66)
-    print("B. Does RevIN matter?   (ETTh1, L=336)")
-    print("=" * 66)
-    print(f"{'H':>5} {'with RevIN':>13} {'without':>10} {'Δ':>9}")
-    print("-" * 66)
-    for h in HORIZONS:
-        base = next((r for r in runs.values()
-                     if r["tag"] == "base" and r["pred_len"] == h), None)
-        a = base["test"]["mse"] if base else None
-        b = mse(f"norevin_h{h}")
-        if a is None or b is None:
-            print(f"{h:>5} {fmt(a):>13} {fmt(b):>10}")
-            continue
-        print(f"{h:>5} {fmt(a):>13} {fmt(b):>10} {b - a:>+9.4f}")
-
-    print("\n" + "=" * 66)
-    print("C. Does a longer lookback help?   (ETTh1, H=96)")
-    print("=" * 66)
-    print("  The paper's sharpest claim: PatchTST IMPROVES with a longer")
-    print("  lookback, where other Transformers degrade. Patching is what")
-    print("  makes the long lookback affordable, so this curve is the actual")
-    print("  argument for the whole method.")
-    print()
-    print(f"{'L':>6} {'n_patches':>10} {'test MSE':>10}   trend")
-    print("-" * 66)
-    prev = None
-    values = []
-    for L in LOOKBACKS:
-        r = runs.get(f"look_L{L}")
-        if not r:
-            print(f"{L:>6} {'--':>10} {'--':>10}")
-            continue
-        m = r["test"]["mse"]
-        npatch = r.get("n_parameters")
-        arrow = "" if prev is None else ("  better" if m < prev else "  worse")
-        print(f"{L:>6} {r['model'].get('seq_len', L)//8:>10} {m:>10.4f}{arrow}")
-        values.append((L, m))
-        prev = m
-    if len(values) >= 3:
-        best_L, best_m = min(values, key=lambda t: t[1])
-        first_m = values[0][1]
-        print()
-        print(f"  best at L={best_L} (MSE {best_m:.4f}); L={values[0][0]} gives {first_m:.4f}")
-        if best_L > values[0][0]:
-            print("  -> longer lookback helps. Reproduces the paper's central claim.")
+        d = b - a
+        if abs(d) < TIE:
+            verdict, ties = "tie", ties + 1
+        elif a < b:
+            verdict, ci_wins = "independence", ci_wins + 1
         else:
-            print("  -> longer lookback does NOT help here. That contradicts the")
-            print("     paper's claim and would need investigating before reporting.")
+            verdict, mix_wins = "MIXING", mix_wins + 1
+        print(f"{h:>5} {f(a)} {f(b)} {d:>+9.4f}  {verdict}")
+    print(f"\n  independence {ci_wins}, mixing {mix_wins}, ties {ties}")
+    if mix_wins > ci_wins:
+        print("  NOTE: this does NOT reproduce the paper's Table 7, which finds")
+        print("  channel independence better. Treat as a discrepancy to explain,")
+        print("  not a finding -- it needs seeds and a check that our channel-")
+        print("  independent path is not itself limited.")
+
+    # ---------------------------------------------------------------- B
+    print("\n" + "=" * 70)
+    print("B. Does RevIN matter?   (ETTh1, L=336)")
+    print("=" * 70)
+    print(f"{'H':>5} {'with RevIN':>12} {'without':>12} {'Δ':>9}  verdict")
+    print("-" * 70)
+    for h in HORIZONS:
+        a, b = pick(runs, "base", h), pick(runs, f"norevin_h{h}", h)
+        if a is None or b is None:
+            print(f"{h:>5} {f(a)} {f(b)}")
+            continue
+        d = b - a
+        verdict = "tie" if abs(d) < TIE else ("RevIN helps" if d > 0 else "RevIN hurts")
+        print(f"{h:>5} {f(a)} {f(b)} {d:>+9.4f}  {verdict}")
+
+    # ---------------------------------------------------------------- C
+    print("\n" + "=" * 70)
+    print("C. Does a longer lookback help?   (ETTh1, H=96)")
+    print("=" * 70)
+    print("  The paper's sharpest claim: PatchTST improves with a longer")
+    print("  lookback where other Transformers degrade. Patching is what makes")
+    print("  the long lookback affordable, so this curve is the actual argument")
+    print("  for the method.\n")
+    print(f"{'L':>6} {'test MSE':>12}   trend")
+    print("-" * 70)
+    curve = []
+    prev = None
+    for L in LOOKBACKS:
+        m = pick(runs, f"look_L{L}", 96, seq_len=L)
+        if m is None:
+            print(f"{L:>6} {f(m)}")
+            continue
+        if prev is None:
+            trend = ""
+        elif m < prev - TIE:
+            trend = "  better"
+        elif m > prev + TIE:
+            trend = "  WORSE"
+        else:
+            trend = "  flat"
+        print(f"{L:>6} {f(m)}{trend}")
+        curve.append((L, m))
+        prev = m
+
+    if len(curve) >= 3:
+        best_L, best_m = min(curve, key=lambda t: t[1])
+        first_L, first_m = curve[0]
+        last_L, last_m = curve[-1]
+        print()
+        print(f"  shortest L={first_L}: {first_m:.4f}")
+        print(f"  best     L={best_L}: {best_m:.4f}")
+        print(f"  longest  L={last_L}: {last_m:.4f}")
+        print()
+        improved = first_m - best_m > TIE
+        degrades = last_m - best_m > TIE
+        if improved and not degrades:
+            print("  -> monotone improvement with lookback. Reproduces the claim.")
+        elif improved and degrades:
+            print(f"  -> PARTIAL. Improves out to L={best_L}, then degrades.")
+            print("     The paper reports monotone gains, so this only supports")
+            print("     the claim over the shorter range. Plausible causes: the")
+            print("     reduced ETTh1 model (d_model=16) may lack the capacity to")
+            print("     use a very long history, and longer L costs training")
+            print("     windows. Needs seeds before treating as a real difference.")
+        else:
+            print("  -> longer lookback does NOT help. Contradicts the paper;")
+            print("     investigate before reporting.")
     print()
 
 

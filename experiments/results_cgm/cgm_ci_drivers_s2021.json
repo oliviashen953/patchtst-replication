@@ -1,0 +1,35 @@
+{
+  "name": "cgm_ci_drivers_s2021",
+  "tag": "ci_drivers",
+  "channel_mixing": false,
+  "drivers": "on",
+  "test": {
+    "mse": 0.6085603339828228,
+    "cgm_rmse_mgdl": 18.074332489727958,
+    "cgm_mae_mgdl": 9.11059342989088
+  },
+  "best_epoch": 39,
+  "best_val_mse": 0.6070761541414141,
+  "epochs_run": 55,
+  "n_parameters": 43416,
+  "seq_len": 48,
+  "pred_len": 12,
+  "seed": 2021,
+  "data_seed": 0,
+  "wall_seconds": 73.96267104148865,
+  "train": {
+    "epochs": 60,
+    "batch_size": 128,
+    "learning_rate": 0.0001,
+    "weight_decay": 0.001,
+    "grad_clip_norm": 1.0,
+    "patience": 15,
+    "min_delta": 0.0,
+    "min_lr": 1e-05,
+    "lradj": "cosine",
+    "seed": 2021,
+    "device": "cuda",
+    "num_workers": 2,
+    "checkpoint": "/sfs/gpfs/tardis/home/avj7cu/patchtst-replication/experiments/results_cgm/cgm_ci_drivers_s2021.pt"
+  }
+}
