@@ -86,12 +86,11 @@ def split_borders(n_rows: int, seq_len: int) -> dict[str, tuple[int, int]]:
     #   - val and test each start `seq_len` rows BEFORE their own data begins,
     #     so the first window has full history. Their ends are val_end/test_end.
     #
-    # return {
-    #     "train": (0, train_end),
-    #     "val": (train_end - seq_len, val_end),
-    #     "test": (val_end - seq_len, test_end),
-    # }
-    raise NotImplementedError("Step 1: implement split_borders")
+    return {
+        "train": (0, train_end),
+        "val": (train_end - seq_len, val_end),
+        "test": (val_end - seq_len, test_end),
+    }
 
 
 class ETTh1Dataset(Dataset):
@@ -142,7 +141,7 @@ class ETTh1Dataset(Dataset):
         # A window occupies seq_len + pred_len rows. If the split has R rows,
         # the number of valid start positions is R - seq_len - pred_len + 1.
         # Return 0 rather than a negative number if the split is too short.
-        raise NotImplementedError("Step 1: implement __len__")
+        return max(0, len(self.data) - self.seq_len - self.pred_len + 1)
 
     def __getitem__(self, index: int) -> tuple[torch.Tensor, torch.Tensor]:
         # TODO(you): slice the two windows out of self.data.
@@ -151,7 +150,12 @@ class ETTh1Dataset(Dataset):
         #   y = rows [index + seq_len,   index + seq_len + pred_len)
         #
         # Return them as torch tensors via torch.from_numpy(...).
-        raise NotImplementedError("Step 1: implement __getitem__")
+        if index < 0 or index >= len(self):
+              raise IndexError(index)
+        start = index
+        mid = start + self.seq_len
+        end = mid + self.pred_len
+        return torch.from_numpy(self.data[start:mid]), torch.from_numpy(self.data[mid:end])
 
 
 def make_datasets(
