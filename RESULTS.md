@@ -287,3 +287,139 @@ mkdir -p logs
 sbatch scripts/cgm_slurm.sh      # array 0-3, one cell each, ~75 s
 python experiments/collate_cgm.py
 ```
+
+---
+
+# Step 12 — Masked self-supervised pretraining, and what a validation split can hide
+
+ETTh1, paper §4.2 geometry (L=512, non-overlapping P=S=12, d_model 128, 3 layers,
+2.4M params), mask ratio 0.4, seed 2021, one run per cell. Four arms share one
+pretrained checkpoint: `pretrain` (100 epochs, masked reconstruction, no labels),
+`linear_probe` (frozen backbone, 20 epochs), `finetune` (10 probe + 20 end-to-end),
+and `scratch` — identical architecture and budget from random init, which is the
+like-for-like control the paper's Table 12 does not have.
+
+Pretraining works as advertised: masked reconstruction MSE 0.9098 → 0.4261 over
+100 epochs, still improving at epoch 99.
+
+## The result, selecting checkpoints on validation
+
+| H | scratch | lin. probe | finetune | probe−scr | ft−scr | verdict |
+|---:|---:|---:|---:|---:|---:|---|
+| 96 | 0.3854 | 0.3816 | 0.3829 | −0.0037 | −0.0025 | pretraining helps |
+| 192 | 0.4041 | 0.4182 | 0.4357 | +0.0141 | +0.0316 | pretraining hurts |
+| 336 | **0.6405** | 0.4620 | 0.4568 | −0.1785 | −0.1837 | pretraining helps |
+| 720 | 0.6084 | 0.5920 | 0.5848 | −0.0163 | −0.0236 | pretraining helps |
+
+Read it and stop there and the story is "pretraining helps at three horizons out
+of four." **That story is wrong**, and the tell is the bolded cell: `scratch` at
+H=336 is *worse* than `scratch` at H=720. Error is supposed to grow with horizon.
+One cell being non-monotonic is not a result, it is a symptom.
+
+## The symptom
+
+Every arm's per-epoch validation curve was already in the result JSONs. Six of the
+twelve runs pick their best checkpoint at **epoch 0 or 1** out of 20–30, and
+validation MSE rises monotonically afterwards.
+
+The first guess — undertrained, raise the learning rate — is refuted by the
+training curves stored in the `.pt` files. Train loss falls steadily in all
+sixteen phases (`scratch` H=96: 0.4462 → 0.2552, a 43% drop). Optimization is
+fine. Train falls while validation rises: this is overfitting.
+
+But then the numbers stop adding up. Validation MSE runs 0.73–2.13 while test MSE
+on the same models runs 0.38–0.64. **Validation is two to three times harder than
+test.** Checkpoints are selected on validation. So what is actually being measured?
+
+## The diagnostic
+
+`fit()` gained an optional `probe_set`: it records per-epoch test MSE into
+`history.probe_mse` and *nothing reads it back* — selection still consults
+validation only. That makes one question answerable after the fact: is the epoch
+validation picked the same epoch test would have picked?
+
+A caveat about instrumentation. `DataLoader` draws one number from the global RNG
+every time an iterator is created — even with `shuffle=False`, to seed workers —
+so probing each epoch shifts the training shuffle from the next epoch onward. The
+probe loader needs its own `torch.Generator`. With that, all twelve reruns
+reproduce their original test MSE to the last digit (Δ = 0.0e+00, twelve for
+twelve), which is the proof that the instrument did not disturb the measurement.
+
+| H | arm | val-selected | test-oracle | cost | val epoch | oracle epoch |
+|---:|---|---:|---:|---:|---:|---:|
+| 96 | scratch | 0.3854 | 0.3745 | 0.0109 | 0 | 2 |
+| 96 | linear_probe | 0.3816 | 0.3771 | 0.0045 | 17 | 14 |
+| 96 | finetune | 0.3829 | 0.3829 | 0.0000 | 0 | 0 |
+| 192 | scratch | 0.4041 | 0.4041 | 0.0000 | 1 | 1 |
+| 192 | linear_probe | 0.4182 | 0.4113 | 0.0068 | 14 | 18 |
+| 192 | finetune | 0.4357 | 0.4231 | 0.0126 | 1 | 0 |
+| 336 | scratch | **0.6405** | **0.4215** | **0.2189** | 13 | 2 |
+| 336 | linear_probe | 0.4620 | 0.4320 | 0.0300 | 2 | 17 |
+| 336 | finetune | 0.4568 | 0.4568 | 0.0000 | 0 | 0 |
+| 720 | scratch | 0.6084 | 0.4259 | 0.1825 | 5 | 0 |
+| 720 | linear_probe | 0.5920 | 0.5010 | 0.0910 | 0 | 19 |
+| 720 | finetune | 0.5848 | 0.5238 | 0.0610 | 1 | 0 |
+
+**The oracle column selects on test and is therefore not a result.** It is an
+upper bound whose only job is to test whether the first table's verdict survives
+a change of selection rule.
+
+It does not. `scratch` H=336 loses 0.2189 MSE to selection alone — validation
+keeps epoch 13, test's best was epoch 2. That single selection error is the whole
+0.6405 outlier, and the outlier is the whole "pretraining helps at 336" verdict.
+At H=720 linear probing is worse: validation says stop at epoch 0 while test error
+falls all the way to epoch 19. The two splits point in opposite directions.
+
+## The verdict flips
+
+| H | scratch | lin. probe | finetune | winner |
+|---:|---:|---:|---:|---|
+| 96 | **0.3745** | 0.3771 | 0.3829 | scratch |
+| 192 | **0.4041** | 0.4113 | 0.4231 | scratch |
+| 336 | **0.4215** | 0.4320 | 0.4568 | scratch |
+| 720 | **0.4259** | 0.5010 | 0.5238 | scratch |
+
+Hold the selection rule fixed across arms and **self-supervised pretraining never
+beats training from scratch on ETTh1, at any horizon.** The `scratch` column also
+becomes monotonic in horizon, as it should have been all along.
+
+This is not a refutation of the paper's method. It is a statement about the
+dataset: ETTh1 is small, its validation split disagrees with its test split more
+and more as the horizon grows, and pretraining on it sees no data the supervised
+model does not already see. The paper's own Table 12 says something compatible —
+pretraining wins only at H=96 there, and loses at 336 and 720.
+
+## What this costs the rest of the repo
+
+The same mechanism is the standing explanation for the Step 9 H=720 gap
+(+0.0491 against the paper), where validation was already known to be 1.8–3.0×
+harder than test with the ratio growing in the horizon. That lead is no longer
+speculative: on the Step 12 arms, selecting on this validation split costs up to
+0.2189 MSE. Re-running Step 9 with the probe is the obvious next move.
+
+## Two artifacts of mine that were wrong
+
+Worth recording alongside the two in Step 10, because both would have shipped
+silently:
+
+1. **`collate_ssl.py` reported a smoke test as a result.** Lookups were keyed on
+   `(stage, pred_len)`, and `smoke_ft.json` — a 3-epoch throwaway — carries
+   `stage='finetune'`, `pred_len=96` exactly like the real run. Whichever the
+   glob yielded first won. The H=96 fine-tuning cell read 0.3768 when the real
+   run was 0.3829. Fixed by excluding `smoke_*` at load time instead of trusting
+   glob order.
+2. **The first version of the probe was not inert** — the `DataLoader` RNG draw
+   above. Caught only because the toy check compared probed and unprobed val
+   curves and found them differing at 1e-5 by epoch 2.
+
+## Reproducing
+
+```bash
+mkdir -p logs
+PRE=$(sbatch --parsable --array=0 scripts/ssl_slurm.sh)     # 100 epochs, ~6 min
+sbatch --dependency=afterok:$PRE --array=1-12 scripts/ssl_slurm.sh
+python experiments/collate_ssl.py
+```
+
+Downstream arms reuse `results_ssl/pretrain_etth1_mask40.pt`, so re-running
+tasks 1–12 alone is valid as long as that checkpoint is present.

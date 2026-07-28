@@ -20,3 +20,6 @@ logs/
 *.log
 
 experiments/results_ssl_prerun/
+
+# Throwaway 2-3 epoch smoke runs, not results.
+experiments/results_ssl/smoke_*.json
