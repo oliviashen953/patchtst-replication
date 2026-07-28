@@ -6,8 +6,8 @@ Everything already exists. This file only wires it together:
 
     x  [B, L, C]
       -> RevIN.normalize          (inside the backbone)
-      -> Patchify                 [B, C, N, P]
-      -> fold C into the batch    [B*C, N, P]
+      -> Patchify                 [B, C, N, P] ### !!!! patch first, then fold C into the batch
+      -> fold C into the batch    [B*C, N, P]  ### !!!! then do the channel independence here!!
       -> PatchEncoder             [B*C, N, d_model]
       -> unfold C back out        [B, C, N, d_model]
       -> FlattenHead              [B, pred_len, C]
