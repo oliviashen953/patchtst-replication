@@ -74,6 +74,7 @@ class PatchTST(nn.Module):
         head_dropout: float = 0.0,
         individual: bool = False,
         revin: bool = True,
+        channel_mixing: bool = False,
     ):
         super().__init__()
         self.n_channels = int(n_channels)
@@ -91,6 +92,7 @@ class PatchTST(nn.Module):
             d_ff=d_ff,
             dropout=dropout,
             revin=revin,
+            channel_mixing=channel_mixing,
         )
         self.n_patches = self.backbone.n_patches
 

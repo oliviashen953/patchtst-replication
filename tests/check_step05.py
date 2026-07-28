@@ -77,12 +77,18 @@ def main():
         )
 
     # --- CHANNELS MUST NOT INTERACT ----------------------------------------
-    # Perturb channel 0's input; every OTHER channel's output must be unchanged.
+    # The perturbation has to change channel 0's SHAPE, not just its level.
+    # RevIN normalizes each channel by its own mean and std, so ANY affine
+    # change (+= c, *= k) is erased before the model sees it -- a constant
+    # offset here makes the whole test vacuous, since nothing changes and
+    # "other channels unchanged" becomes trivially true even for a
+    # channel-MIXING model. Replacing the waveform survives normalization.
     perturbed = probe.clone()
-    perturbed[0, :, 0] += 10.0
+    perturbed[0, :, 0] = torch.sign(torch.sin(torch.linspace(0, 40.0, L)))
     after = model(perturbed)
-    assert not torch.allclose(after[0, 0], encoded[0, 0], atol=1e-6), (
-        "perturbing channel 0 did not change channel 0's own output"
+    assert not torch.allclose(after[0, 0], encoded[0, 0], atol=1e-4), (
+        "perturbing channel 0 did not change channel 0's own output -- the "
+        "probe is not reaching the model"
     )
     for c in range(1, C):
         assert torch.allclose(after[0, c], encoded[0, c], atol=1e-6), (

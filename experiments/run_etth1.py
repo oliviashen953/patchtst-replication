@@ -107,9 +107,13 @@ def main() -> None:
     parser.add_argument("--num-workers", type=int, default=4)
     parser.add_argument("--tag", default="base", help="label for this run")
     # Ablation switches, used by Step 10.
-    parser.add_argument("--no-revin", action="store_true")
+    parser.add_argument("--no-revin", action="store_true",
+                        help="disable reversible instance normalization")
     parser.add_argument("--channel-mixing", action="store_true",
-                        help="placeholder for the Step 10 ablation")
+                        help="fold channels into the SEQUENCE, so attention "
+                             "crosses channels (the thing PatchTST avoids)")
+    parser.add_argument("--seq-len", type=int, default=None,
+                        help="override the lookback window L (default 336)")
     args = parser.parse_args()
 
     if not CSV.exists():
@@ -119,6 +123,10 @@ def main() -> None:
     model_kwargs = dict(ETTH1_MODEL)
     if args.no_revin:
         model_kwargs["revin"] = False
+    if args.channel_mixing:
+        model_kwargs["channel_mixing"] = True
+    if args.seq_len is not None:
+        model_kwargs["seq_len"] = args.seq_len
 
     train_set, val_set, test_set = make_datasets(
         str(CSV), seq_len=model_kwargs["seq_len"], pred_len=args.pred_len
