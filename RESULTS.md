@@ -86,7 +86,9 @@ Setting `weight_decay=0` was **worse at every horizon**: 0.3778 / 0.4171 /
 
 Three quite different optimizer/schedule setups land within 0.0013 of each other,
 against the paper's 0.449. The gap is **insensitive to training hyperparameters**,
-so the cause is structural rather than a matter of tuning.
+so whatever causes it is not a matter of tuning. The next section names a
+candidate — and Step 12 later found that candidate doing exactly this, at scale,
+on a different set of runs.
 
 ## The open lead: validation and test disagree
 
@@ -105,9 +107,25 @@ If validation is a poor proxy for test here, epoch 2 may simply be a bad choice
 *for test*, which would explain why no training-dynamics fix helps: the problem
 would be **which checkpoint is selected**, not how the model is trained.
 
-Diagnostic, not yet run: log test MSE per epoch (purely for inspection, never for
+The diagnostic: log test MSE per epoch (purely for inspection, never for
 selection) and check whether the test-optimal epoch is far from the val-optimal
 one.
+
+**Update — Step 12 ran exactly this diagnostic on a different set of runs, and
+the answer was yes, emphatically.** On the self-supervised arms, selecting on
+this validation split cost up to 0.2189 MSE, and at H=720 one arm's validation
+picked epoch 0 while its test error kept falling to epoch 19. See
+[Step 12](#step-12--masked-self-supervised-pretraining-and-what-a-validation-split-can-hide).
+
+That makes "the H=720 gap is a property of my implementation" the *less* likely
+reading. It is now more likely a property of the benchmark. **The confirming run
+— Step 9 with `--probe-test` — is queued but has not landed, so this section
+still reports the val-selected numbers and the gap above stands as measured.**
+Re-run it with:
+
+```bash
+PROBE=1 sbatch scripts/train_slurm.sh
+```
 
 ## Verification
 

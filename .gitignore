@@ -25,3 +25,6 @@ experiments/results_ssl_prerun/
 experiments/results_ssl/smoke_*.json
 
 experiments/results_prerun/
+
+# Working log: session IDs, job scratch, resume notes. Local only.
+RESUME.md
