@@ -40,6 +40,19 @@ is
 The `+2` is `+1` for the usual "fencepost" and `+1` for that padded patch.
 Keeping this exact matters: it sets the input width of the prediction head, so
 an off-by-one here changes the parameter count of the whole model.
+
+L is the length of the time series,
+P is the patch length,
+S is the stride,
+pad_end is a boolean indicating whether to pad the end of the time series.
+
+The number of patches is calculated as follows:
+
+base = (seq_len - patch_len) // stride + 1
+return base + 1 if pad_end else base
+
+Sanity-check yourself against the paper: seq_len=336, patch_len=16, stride=8, pad_end=True should give 42.
+
 """
 
 from __future__ import annotations
@@ -56,13 +69,15 @@ def num_patches(seq_len: int, patch_len: int, stride: int, pad_end: bool = True)
         raise ValueError("patch_len and stride must be positive")
 
     # TODO(you): return the number of patches.
-    #
-    #   base = (seq_len - patch_len) // stride + 1
-    #   return base + 1 if pad_end else base
-    #
-    # Sanity-check yourself against the paper: seq_len=336, patch_len=16,
-    # stride=8, pad_end=True should give 42.
-    raise NotImplementedError("Step 3: implement num_patches")
+    # base is the number of patches without the padded patch
+    # we subtract the patch length from the sequence length 
+    # and divide by the stride to get the number of patches
+    # and add one to account for the first patch
+    base = (seq_len - patch_len) // stride + 1
+    # if pad_end is True, we add one patch for the padded patch
+    # otherwise we return the number of patches without the padded patch
+    return base + 1 if pad_end else base
+
 
 
 class Patchify(nn.Module):
@@ -101,15 +116,12 @@ class Patchify(nn.Module):
         if self.pad is not None:
             x = self.pad(x)
 
-        # TODO(you): cut the patches with Tensor.unfold.
-        #
-        #   x = x.unfold(dimension=-1, size=self.patch_len, step=self.stride)
-        #
         # unfold slides a window of `size` along `dimension`, stepping by `step`,
-        # and appends the window contents as a NEW trailing axis. So
+        # and appends the window contents as a NEW trailing axis:
         #   [B, C, T_padded]  ->  [B, C, n_patches, patch_len]
-        # which is exactly the shape we want. Return it.
         #
-        # unfold returns a VIEW, not a copy -- it is free. That is worth
-        # appreciating: the paper's central operation costs no memory.
-        raise NotImplementedError("Step 3: implement Patchify.forward")
+        # It returns a VIEW, not a copy -- new strides over the same memory, so
+        # nothing is allocated. The paper's central operation is free. The flip
+        # side is that the result is non-contiguous, which Step 5's reshape will
+        # care about.
+        return x.unfold(dimension=-1, size=self.patch_len, step=self.stride)
