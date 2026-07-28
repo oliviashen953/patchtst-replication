@@ -67,13 +67,13 @@ myself against after each step. See [NOTICE.md](NOTICE.md) for attribution.
 | 11 | `patchtst/cgm.py` | — | Apply the finished model to CGM forecasting |
 | 12 | `patchtst/pretrain.py` | **§4.2, Table 12** | Masked self-supervised pretraining, linear probing, fine-tuning |
 
-**Status: steps 1–11 complete; step 12's runs are in flight.** Every number is
+**Status: all twelve steps complete.** Every number is
 in [RESULTS.md](RESULTS.md); each step is written up in
 [tutorial/](tutorial/) ([9](tutorial/STEP09_reproduce.md) ·
 [10](tutorial/STEP10_ablations.md) · [11](tutorial/STEP11_cgm.md) ·
 [12](tutorial/STEP12_pretrain.md)).
 
-Three findings, none of them a clean win:
+Four findings, none of them a clean win:
 
 - **Step 9 — ETTh1.** Three of four horizons land within 0.01 MSE of the paper
   (96 and 192 slightly below it). H=720 misses by +0.049, and two hypotheses
@@ -86,9 +86,20 @@ Three findings, none of them a clean win:
   causally drive `cgm` — but it also wins in the zeroed-driver control, and it
   carries 4.4% more parameters. Most of the apparent gain is capacity, not
   causal information.
+- **Step 12 — self-supervised pretraining.** Selecting checkpoints on
+  validation, masked pretraining appears to beat training from scratch at three
+  of four horizons. Hold the selection rule fixed and it beats it at none. One
+  arm lost 0.219 MSE to checkpoint selection alone — validation kept epoch 13
+  where test's best was epoch 2 — and that single error produced the entire
+  apparent win. ETTh1's validation split disagrees with its test split, worse as
+  the horizon grows.
 
 Everything here is a **single seed**. Differences under ~0.01 MSE are not
 separable from seed noise and should not be read as wins.
+
+The repo also records the mistakes: four bugs in my own test and collation code
+that would each have shipped a plausible wrong number, written up where they
+happened rather than quietly fixed.
 
 ## Data
 
