@@ -65,11 +65,13 @@ myself against after each step. See [NOTICE.md](NOTICE.md) for attribution.
 | 9 | `experiments/` | **Table 3** | Reproduce ETTh1 at horizons 96/192/336/720 |
 | 10 | `experiments/` | **Tables 6–7** | Channel-independence on/off, RevIN on/off, lookback sweep |
 | 11 | `patchtst/cgm.py` | — | Apply the finished model to CGM forecasting |
+| 12 | `patchtst/pretrain.py` | **§4.2, Table 12** | Masked self-supervised pretraining, linear probing, fine-tuning |
 
-**Status: all 11 steps complete.** Every number is in
-[RESULTS.md](RESULTS.md); each step is written up in
+**Status: steps 1–11 complete; step 12's runs are in flight.** Every number is
+in [RESULTS.md](RESULTS.md); each step is written up in
 [tutorial/](tutorial/) ([9](tutorial/STEP09_reproduce.md) ·
-[10](tutorial/STEP10_ablations.md) · [11](tutorial/STEP11_cgm.md)).
+[10](tutorial/STEP10_ablations.md) · [11](tutorial/STEP11_cgm.md) ·
+[12](tutorial/STEP12_pretrain.md)).
 
 Three findings, none of them a clean win:
 
