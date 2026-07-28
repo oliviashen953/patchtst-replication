@@ -17,21 +17,33 @@ TIE = 0.002
 
 
 def load() -> list[dict]:
-    return [json.loads(p.read_text()) for p in RESULTS.glob("*.json")]
+    return [json.loads(p.read_text()) for p in sorted(RESULTS.glob("*.json"))]
 
 
 def pick(runs, tag, pred_len=None, seq_len=None):
     """Results are keyed by (tag, pred_len) -- a tag alone is NOT unique,
-    since the four baseline horizons all share tag 'base'."""
-    for r in runs:
-        if r["tag"] != tag:
-            continue
-        if pred_len is not None and r["pred_len"] != pred_len:
-            continue
-        if seq_len is not None and r["model"].get("seq_len") != seq_len:
-            continue
-        return r["test"]["mse"]
-    return None
+    since the four baseline horizons all share tag 'base'.
+
+    Two or more matches is an error, not a coin flip. `collate_ssl.py` used to
+    return the first match from an unsorted glob, and a 3-epoch smoke run
+    carrying the same (stage, pred_len) as a real one got reported as the
+    result. Whichever run the filesystem happened to yield first won. Raising
+    here means that failure announces itself instead of printing a plausible
+    wrong number.
+    """
+    hits = [
+        r for r in runs
+        if r["tag"] == tag
+        and (pred_len is None or r["pred_len"] == pred_len)
+        and (seq_len is None or r["model"].get("seq_len") == seq_len)
+    ]
+    if len(hits) > 1:
+        names = ", ".join(sorted(r["name"] for r in hits))
+        raise SystemExit(
+            f"ambiguous: {len(hits)} runs match tag={tag!r} pred_len={pred_len} "
+            f"seq_len={seq_len} -- {names}. Remove or re-tag the extras."
+        )
+    return hits[0]["test"]["mse"] if hits else None
 
 
 def f(v, w=12):

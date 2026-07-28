@@ -139,8 +139,8 @@ Recorded rather than hidden, since they may explain part of the gap.
 
 ```bash
 mkdir -p logs
-sbatch scripts/train_slurm.sh     # array 0-3, one horizon each
-python experiments/collate.py
+sbatch scripts/train_slurm.sh              # array 0-3, one horizon each
+python experiments/collate.py --tag base   # --tag is required once Step 10 has run
 ```
 
 ---

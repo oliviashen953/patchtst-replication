@@ -35,6 +35,20 @@ def main() -> None:
             f"no results in {RESULTS} -- run experiments/run_etth1.py first"
         )
 
+    # `results/` holds the Step 10 ablations too -- channel mixing, no-RevIN and
+    # the lookback sweep all write here. Averaging below is meant for SEEDS of
+    # one configuration, and it cannot tell a second seed from a different
+    # experiment: both are just extra runs at the same horizon. Blending them
+    # printed 0.4893 at H=720 where the baseline is 0.4981, quietly shrinking
+    # the very gap Step 9 is about. So refuse, and say which tag was meant.
+    tags = sorted({r.get("tag", "?") for r in records})
+    if args.tag is None and len(tags) > 1:
+        raise SystemExit(
+            f"{RESULTS} holds several experiments: {', '.join(tags)}.\n"
+            f"Averaging across them would mix ablations into the baseline. "
+            f"Pass one, e.g.:\n\n    python experiments/collate.py --tag base\n"
+        )
+
     by_horizon: dict[int, list[dict]] = {}
     for r in records:
         by_horizon.setdefault(r["pred_len"], []).append(r)

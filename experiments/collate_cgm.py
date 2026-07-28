@@ -12,9 +12,18 @@ RESULTS = Path(__file__).resolve().parent / "results_cgm"
 
 
 def main() -> None:
+    # Keyed on tag alone, so a second run carrying an existing tag would
+    # silently overwrite the first -- and which one survived would depend on
+    # glob order. Sort for determinism, and refuse rather than pick. See the
+    # note in collate_ablation.pick() for the version of this that shipped.
     runs = {}
-    for path in RESULTS.glob("*.json"):
+    for path in sorted(RESULTS.glob("*.json")):
         r = json.loads(path.read_text())
+        if r["tag"] in runs:
+            raise SystemExit(
+                f"duplicate tag {r['tag']!r}: {runs[r['tag']]['name']} and "
+                f"{r['name']} both claim it. Remove or re-tag one."
+            )
         runs[r["tag"]] = r
     if not runs:
         raise SystemExit(f"no results in {RESULTS} -- run scripts/cgm_slurm.sh")

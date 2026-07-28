@@ -73,8 +73,12 @@ small, so each is well under the 4-hour limit; wall-clock is mostly queue wait.
 Then:
 
 ```bash
-python experiments/collate.py
+python experiments/collate.py --tag base
 ```
+
+`--tag` is not optional once Step 10 has run: the ablations write into the same
+`experiments/results/`, and without a tag the script would average them into the
+baseline. It refuses rather than blend, and lists the tags it found.
 
 ## Reading the result
 
