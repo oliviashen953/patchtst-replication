@@ -215,3 +215,75 @@ training windows, so L=720 trains on fewer examples.
 
 The direction of the paper's central claim is reproduced; its monotonicity is
 not.
+
+---
+
+# Step 11 — Channel independence on CGM
+
+Synthetic CGM (`patchtst/cgm.py`), 4 h lookback → 1 h ahead, seed 2021,
+`data_seed=0`, one run per cell. RMSE in mg/dL on the CGM channel, denormalized.
+
+## The 2×2
+
+| | channel-indep | mixing | Δ | Δ relative |
+|---|---:|---:|---:|---:|
+| drivers informative | 18.074 | **16.985** | −1.090 | **−6.03%** |
+| drivers zeroed (control) | 4.249 | **4.089** | −0.161 | −3.78% |
+
+MAE tracks RMSE (9.111 → 8.575 informative; 3.249 → 3.123 control).
+
+**The prediction was (b) beats (a) *and* (d) does not beat (c). Half of it
+held.** Mixing wins with informative drivers, as expected — but it also wins in
+the control, where the causal link has been removed from the generator. So the
+advantage cannot be attributed to meal/bolus information alone.
+
+## Reading the control correctly
+
+The two rows are **not on the same difficulty scale**, so the absolute Δs should
+not be compared directly. Setting `meal_effect = bolus_effect = 0` removes the
+excursions from the series itself, not just from the model's inputs — which is
+why the control column sits at ~4 mg/dL against ~18. A model predicting a
+smooth circadian baseline has a much easier job.
+
+Relative gain is the fairer comparison: **6.03% informative vs 3.78% control.**
+A margin of roughly 2.3 points survives the control and is the largest share of
+the effect that can be called causal.
+
+## The capacity confound is real and measurable
+
+Mixing is not a free change. It folds `C` into the sequence axis, which
+lengthens the position table:
+
+| | parameters |
+|---|---:|
+| channel-independent | 43,416 |
+| channel-mixing | 45,336 (+4.4%) |
+
+That 4.4% is the mechanism behind the control-row win. Without the control the
+whole 1.090 mg/dL would have been reported as evidence that the model exploits
+meals — and roughly 60% of it would have been an artifact of a bigger model.
+This is the chapter's actual lesson.
+
+## What this supports
+
+A residual advantage for channel mixing survives a capacity control on data
+where the causal driver provably exists (`corr(meal[t], cgm[t+45min]) = +0.218`
+against a +0.006 control). That is consistent with channel independence
+discarding usable information when channels are causally linked rather than
+parallel — the opposite of the ETTh1 regime in Step 10A, where the channels are
+sensors on one transformer.
+
+**What it does not support:** anything about real CGM, real patients, or
+clinical utility. Single seed, one architecture size, synthetic data from a
+generator written to *have* the structure under test, and a 2.3-point relative
+margin that no seed variance has been measured against. Treat it as a motivated
+hypothesis for testing on real data under the appropriate agreement, not as a
+result about glucose.
+
+## Reproducing
+
+```bash
+mkdir -p logs
+sbatch scripts/cgm_slurm.sh      # array 0-3, one cell each, ~75 s
+python experiments/collate_cgm.py
+```
