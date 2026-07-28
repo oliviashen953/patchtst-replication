@@ -119,7 +119,12 @@ class ChannelIndependentBackbone(nn.Module):
 
         patches = self.patchify(x)          # [B, C, N, P]
 
-        # THIS IS THE LINE THAT CREATES CHANNEL INDEPENDENCE. After it the
+        # THIS IS THE LINE THAT CREATES CHANNEL INDEPENDENCE.
+        # the line is:
+        # flat = patches.contiguous().reshape(
+        #     batch * self.n_channels, self.n_patches, -1
+        # )
+        # after it the
         # encoder sees B*C separate univariate patch sequences and has no way
         # to tell which channel any of them came from -- structural, not a mask
         # or a penalty term.
@@ -140,3 +145,84 @@ class ChannelIndependentBackbone(nn.Module):
         return encoded.reshape(
             batch, self.n_channels, self.n_patches, self.d_model
         )
+
+# ● That's the whole answer:
+
+#   ┌───────────────┬─────────────────────────────────────────┐
+#   │ Perturb one…  │            Others affected?             │
+#   ├───────────────┼─────────────────────────────────────────┤
+#   │ batch element │ No — bit-identical. Zero communication. │
+#   ├───────────────┼─────────────────────────────────────────┤
+#   │ seq position  │ Yes, all of them. Attention mixes them. │
+#   └───────────────┴─────────────────────────────────────────┘
+
+#   The batch axis is the one axis with no interaction. The seq axis is where attention lives.
+
+#   So the fold is a choice of which axis to hide channels in
+
+#   You have [B, C, N, P] and must collapse it to 3-D for the encoder. Three options:
+
+#   # ① fold C into BATCH        → attention runs over N patches, per channel
+#   patches.reshape(B*C, N, P)          # CHANNEL INDEPENDENT  ← PatchTST
+
+#   # ② fold C into SEQ          → channel 0's patch can attend to channel 3's patch
+#   patches.reshape(B, C*N, P)          # channel mixing
+
+#   # ③ fold C into FEATURE      → every token is a blend of all channels
+#   patches.permute(...).reshape(B, N, C*P)   # channel mixing
+
+#   Same tensor, same numbers, three different models. Option ② and ③ are roughly what the older Transformers do.
+
+#   Channel independence isn't enforced by a mask or a loss penalty — it's enforced by placement. Once a channel sits in the batch axis, there
+#   is no code path by which its values can reach another channel. The attention matrix is [N, N], computed separately for each of the B*C
+#   rows. Channel information isn't forbidden from crossing; it's simply not present to cross.
+
+#   That's why it's one line, and why your check_step05 assertion — perturb channel 0, all 6 others bit-identical — comes out exact rather
+#   than approximate. It's not "the model learned to mostly ignore other channels." It structurally cannot see them.
+
+#   The flip side, again worth remembering
+
+#   This is also precisely why applying it to CGM is questionable. If meal sits in the batch axis alongside cgm, there is no mechanism by
+#   which a meal can inform the glucose forecast — not a weak one, none. On ETTh1 that's an acceptable trade. On CGM you'd be structurally
+#   deleting your best predictor.
+
+#   Changing that would mean picking option ② for a subset of channels — which is a real research question, and one you're now equipped to
+#   actually implement.
+
+
+"""
+● TL;DR
+  
+  Channels = variables (columns). ETTh1 has 7 sensors measured on the same hourly clock. Time goes down, channels go across.
+
+  The reshape doesn't change any numbers. [B, C, N, P] → [B*C, N, P] just re-labels: instead of addressing a sequence by (window, channel),
+  you address it by row. Same 6 sequences, nothing blended.
+
+  Why that gives channel independence: attention runs over the seq axis, never across the batch axis. Putting channels in the batch axis
+  means there's no path for one channel to reach another. Not "the model learns to ignore them" — the information isn't there.
+
+  Same tensor, different axis, different model:
+
+  patches.reshape(B*C, N, P)     # channels in BATCH  → independent  ← PatchTST
+  patches.reshape(B, C*N, P)     # channels in SEQ    → mixing
+
+  Matters for your CGM work: channel independence would structurally prevent meal/bolus from informing the cgm forecast. Fine on ETTh1
+  (parallel sensors), questionable when channels are causal drivers. That's Step 11.
+
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  What actually changed: only the brackets
+
+  BEFORE  [B=2, C=2, N=2, P=2]           AFTER  [B*C=4, N=2, P=2]
+
+  window 0 ┌ channel 0: [[0,0],[1,1]]     row 0: [[0,0],[1,1]]
+           └ channel 1: [[10,10],[11,11]] row 1: [[10,10],[11,11]]
+  window 1 ┌ channel 0: [[100,...],...]   row 2: [[100,...],...]
+           └ channel 1: [[110,...],...]   row 3: [[110,...],...]
+
+  Before: 2 groups of 2. After: 4 in a flat list. Memory is untouched — same 16 numbers, same order. One layer of nesting was removed.
+
+  Why removing that nesting is the whole idea
+
+
+"""

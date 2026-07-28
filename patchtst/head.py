@@ -84,12 +84,9 @@ class FlattenHead(nn.Module):
                 nn.Linear(in_features, self.pred_len) for _ in range(self.n_channels)
             )
         else:
-            # TODO(you): create the SHARED head.
-            #
-            # A single nn.Linear(in_features, self.pred_len), named self.head.
-            # One head for every channel -- that is what "shared" means, and it
+            # One head for EVERY channel -- that is what "shared" means, and it
             # is what keeps the parameter count independent of C.
-            raise NotImplementedError("Step 6: create the shared FlattenHead.head")
+            self.head = nn.Linear(in_features, self.pred_len)
 
     def forward(self, encoded: torch.Tensor) -> torch.Tensor:
         expected = (self.n_channels, self.n_patches, self.d_model)
@@ -108,22 +105,16 @@ class FlattenHead(nn.Module):
             ]
             out = torch.stack(per_channel, dim=1)    # [B, C, pred_len]
         else:
-            # TODO(you): apply the shared head.
-            #
-            # self.head maps the LAST axis, and flat is [B, C, N*d_model], so a
-            # single call handles every channel at once -- no loop needed:
-            #
-            #   out = self.head(flat)                -> [B, C, pred_len]
-            raise NotImplementedError("Step 6: apply the shared head")
+            # nn.Linear maps the LAST axis, and flat is [B, C, N*d_model], so a
+            # single call covers every channel at once -- no loop needed. This
+            # one line IS "shared across channels".
+            out = self.head(flat)                    # [B, C, pred_len]
 
-        # TODO(you): return the forecast time-major.
+        # Return time-major. `out` is [B, C, pred_len] but the rest of the world
+        # -- including the Step 1 targets -- expects [B, pred_len, C].
         #
-        # `out` is [B, C, pred_len] but the rest of the world (and the targets
-        # from Step 1) expect [B, pred_len, C]. Swap the last two axes with
-        # out.transpose(1, 2).
-        #
-        # Getting this wrong is nasty when C == pred_len, because the shape
-        # check passes and only the numbers are wrong. On ETTh1 C=7 and
-        # pred_len=96, so a mistake here fails loudly -- but do not rely on
-        # that.
-        raise NotImplementedError("Step 6: transpose the forecast to [B, pred_len, C]")
+        # This is a nasty bug class whenever C == pred_len: the shape check
+        # still passes and only the numbers are wrong. ETTh1 spares us by
+        # accident (C=7, pred_len=96), so check_step06 tests it deliberately
+        # rather than trusting the shape.
+        return out.transpose(1, 2)
