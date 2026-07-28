@@ -80,12 +80,13 @@ def split_borders(n_rows: int, seq_len: int) -> dict[str, tuple[int, int]]:
             f"file has {n_rows} rows, benchmark needs {test_end}"
         )
 
-    # TODO(you): fill the three (start, end) pairs.
+    # Step 1 exercise — fill the three (start, end) pairs.
     #
     #   - train starts at 0 and ends at train_end.
     #   - val and test each start `seq_len` rows BEFORE their own data begins,
     #     so the first window has full history. Their ends are val_end/test_end.
     #
+    # Answer:
     return {
         "train": (0, train_end),
         "val": (train_end - seq_len, val_end),
@@ -136,20 +137,25 @@ class ETTh1Dataset(Dataset):
         self.data = scaler.transform(values[start:end]).astype(np.float32)
 
     def __len__(self) -> int:
-        # TODO(you): how many complete (lookback, horizon) pairs fit in self.data?
+        # Step 1 exercise — how many complete (lookback, horizon) pairs fit in
+        # self.data?
         #
         # A window occupies seq_len + pred_len rows. If the split has R rows,
         # the number of valid start positions is R - seq_len - pred_len + 1.
         # Return 0 rather than a negative number if the split is too short.
+        #
+        # Answer:
         return max(0, len(self.data) - self.seq_len - self.pred_len + 1)
 
     def __getitem__(self, index: int) -> tuple[torch.Tensor, torch.Tensor]:
-        # TODO(you): slice the two windows out of self.data.
+        # Step 1 exercise — slice the two windows out of self.data.
         #
         #   x = rows [index,             index + seq_len)
         #   y = rows [index + seq_len,   index + seq_len + pred_len)
         #
         # Return them as torch tensors via torch.from_numpy(...).
+        #
+        # Answer:
         if index < 0 or index >= len(self):
               raise IndexError(index)
         start = index

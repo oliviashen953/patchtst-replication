@@ -82,7 +82,7 @@ def train_epoch(
     for x, y in loader:
         x, y = x.to(device), y.to(device)
 
-        # TODO(you): one optimizer step.
+        # Step 8 exercise — one optimizer step.
         #
         #   optimizer.zero_grad()
         #   pred = model(x)
@@ -95,6 +95,8 @@ def train_epoch(
         # zero_grad() FIRST. PyTorch accumulates gradients by default, so
         # forgetting it silently sums every batch's gradients together -- your
         # loss will look erratic and you will blame the learning rate.
+        #
+        # Answer:
         optimizer.zero_grad()
         pred = model(x)
         loss = nn.functional.mse_loss(pred, y)
@@ -125,8 +127,9 @@ def evaluate(
     for x, y in loader:
         x, y = x.to(device), y.to(device)
 
-        # TODO(you): accumulate squared and absolute error.
+        # Step 8 exercise — accumulate squared and absolute error.
         #
+        # Answer:
         pred = model(x)
         sse += ((pred - y) ** 2).sum().item()
         sae += (pred - y).abs().sum().item()
@@ -195,8 +198,9 @@ def fit(
         history.lr.append(optimizer.param_groups[0]["lr"])
         history.epoch_seconds.append(time.time() - started)
 
-        # TODO(you): track the best model and decide whether to stop.
+        # Step 8 exercise — track the best model and decide whether to stop.
         #
+        # Answer:
         improved = metrics["mse"] < history.best_val_mse - config.min_delta
         if improved:
             history.best_val_mse = metrics["mse"]

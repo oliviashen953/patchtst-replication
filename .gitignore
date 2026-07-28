@@ -13,7 +13,8 @@ checkpoints/
 outputs/
 runs/
 logs/
-experiments/results/
+# Result JSONs ARE tracked -- they are the source behind every table in
+# RESULTS.md. Only the checkpoints beside them are too large to keep.
 *.pt
 *.pth
 *.log

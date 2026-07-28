@@ -78,9 +78,10 @@ class RevIN(nn.Module):
         if x.ndim != 3:
             raise ValueError(f"expected [batch, time, channels], got {tuple(x.shape)}")
 
-        # TODO(you): compute the per-instance statistics over the TIME axis.
-        # so if subtract_last is True, we subtract the last value of the time axis, 
-        # otherwise we subtract the mean of the time axis.
+        # Step 2 exercise — compute the per-instance statistics over the TIME axis.
+        #
+        # Answer: so if subtract_last is True, we subtract the last value of the
+        # time axis, otherwise we subtract the mean of the time axis.
         # then we compute the variance of the time axis.
         if self.subtract_last:
               center = x[:, -1:, :].detach()

@@ -68,8 +68,9 @@ def num_patches(seq_len: int, patch_len: int, stride: int, pad_end: bool = True)
     if stride < 1 or patch_len < 1:
         raise ValueError("patch_len and stride must be positive")
 
-    # TODO(you): return the number of patches.
-    # base is the number of patches without the padded patch
+    # Step 3 exercise — return the number of patches.
+    #
+    # Answer: base is the number of patches without the padded patch
     # we subtract the patch length from the sequence length 
     # and divide by the stride to get the number of patches
     # and add one to account for the first patch
