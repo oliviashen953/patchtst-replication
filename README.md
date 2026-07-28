@@ -63,17 +63,30 @@ myself against after each step. See [NOTICE.md](NOTICE.md) for attribution.
 | 7 | `model.py` | Fig 1 | Assemble the full model |
 | 8 | `train.py` | §5.2 | Training loop, MSE/MAE, early stopping |
 | 9 | `experiments/` | **Table 3** | Reproduce ETTh1 at horizons 96/192/336/720 |
-| 10 | `ablations/` | **Tables 6–7** | Channel-independence on/off, RevIN on/off, lookback sweep |
-| 11 | `cgm/` | — | Apply the finished model to CGM forecasting |
+| 10 | `experiments/` | **Tables 6–7** | Channel-independence on/off, RevIN on/off, lookback sweep |
+| 11 | `patchtst/cgm.py` | — | Apply the finished model to CGM forecasting |
 
-**Status: steps 1–9 complete.** Steps 10 and 11 are not written yet. See
-[RESULTS.md](RESULTS.md) for the ETTh1 reproduction — three of four horizons
-land within 0.01 MSE of the paper, and the fourth is documented along with two
-hypotheses that failed to explain it.
+**Status: all 11 steps complete.** Every number is in
+[RESULTS.md](RESULTS.md); each step is written up in
+[tutorial/](tutorial/) ([9](tutorial/STEP09_reproduce.md) ·
+[10](tutorial/STEP10_ablations.md) · [11](tutorial/STEP11_cgm.md)).
 
-Step 10 matters most. The paper's sharpest claim is that PatchTST *improves*
-with a longer lookback while other Transformers get worse. Reproducing that
-curve says more than matching a single MSE.
+Three findings, none of them a clean win:
+
+- **Step 9 — ETTh1.** Three of four horizons land within 0.01 MSE of the paper
+  (96 and 192 slightly below it). H=720 misses by +0.049, and two hypotheses
+  that would have explained it were tested and falsified.
+- **Step 10 — ablations.** RevIN reproduces. The lookback claim reproduces in
+  *direction* but not monotonically — it flattens past L=336. Channel
+  independence does **not** reproduce Table 7 here: mixing ties at short
+  horizons and wins at long ones.
+- **Step 11 — CGM.** Channel mixing beats independence when `meal`/`bolus`
+  causally drive `cgm` — but it also wins in the zeroed-driver control, and it
+  carries 4.4% more parameters. Most of the apparent gain is capacity, not
+  causal information.
+
+Everything here is a **single seed**. Differences under ~0.01 MSE are not
+separable from seed noise and should not be read as wins.
 
 ## Data
 
