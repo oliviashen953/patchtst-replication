@@ -47,11 +47,34 @@ sbatch --dependency=afterok:$PRE --array=1-12 scripts/ssl_slurm.sh
 python experiments/collate_ssl.py
 ```
 
-**Submitted 2026-07-28 12:36**, both still `PENDING` on the a40 queue:
-`17423191` (array 0, pretrain, est. start 13:21) and `17423192` (array 1-12,
-`afterok` dependency on it). A 30-min `ssl_smoke` job `17423134` is queued ahead
-of them (est. start 13:10). Collate with `python experiments/collate_ssl.py`
-once `17423192` clears.
+**First sweep DONE 2026-07-28 13:12** — `17423134` (smoke), `17423191` (pretrain),
+`17423192` (1-12), all 13 COMPLETED, exit 0. `collate_ssl.py` runs clean.
+**But the numbers are not yet trustworthy**, so nothing has gone into `RESULTS.md`:
+
+- 6 of 12 runs select their best checkpoint at **epoch 0 or 1** of 20-30, and val
+  MSE rises monotonically after.
+- Train loss falls steadily in all 16 phases (e.g. scratch h96 0.4462 -> 0.2552),
+  so this is overfitting, not under-training. Do **not** raise the LR.
+- Val MSE is 0.73-2.13 while test MSE is 0.38-0.64: validation is far harder than
+  test, and selection happens on validation.
+- `scratch` H=336 (0.6405) is worse than H=720 (0.6084) — non-monotonic in
+  horizon. That one outlier alone produces the "pretraining helps at 336" verdict
+  (probe-scratch -0.1785, ~10x every other delta).
+
+**Instrumented rerun `17426202` (array 1-12), submitted 13:3x.** `fit()` now takes
+an optional `probe_set` and logs per-epoch TEST mse into `history.probe_mse` —
+diagnostic only, selection still reads validation. Training is bit-identical with
+the probe on (verified; the probe loader needs its own RNG generator, because
+DataLoader draws from the global stream on every iterator creation even when
+`shuffle=False`). Pretraining was **not** repeated — the array reuses
+`results_ssl/pretrain_etth1_mask40.pt`, so the transferred weights are unchanged.
+The first sweep's JSONs are preserved in `experiments/results_ssl_prerun/`; the
+rerun's test MSEs should reproduce them exactly, which is the check that the
+probe really is non-invasive.
+
+The question it answers: is the val-optimal epoch far from the test-optimal one?
+Each run now prints both, plus how much MSE selecting on val leaves on the table.
+Same diagnostic the H=720 supervised gap needs.
 
 Task 0 is pretraining (100 epochs, masked reconstruction); tasks 1-12 are
 linear probing / fine-tuning / from-scratch at H = 96, 192, 336, 720. Results

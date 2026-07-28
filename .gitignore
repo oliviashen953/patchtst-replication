@@ -18,3 +18,5 @@ logs/
 *.pt
 *.pth
 *.log
+
+experiments/results_ssl_prerun/
