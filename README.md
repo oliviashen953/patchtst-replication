@@ -95,10 +95,13 @@ Four findings, none of them a clean win:
   (96 and 192 slightly below it). H=720 misses by +0.049 — traced to checkpoint
   selection, not the implementation: 0.047 of that gap is validation stopping at
   epoch 2 while test error keeps falling to epoch 10.
-- **Step 10 — ablations.** RevIN reproduces. The lookback claim reproduces in
-  *direction* but not monotonically — it flattens past L=336. Channel
-  independence does **not** reproduce Table 7 here: mixing ties at short
-  horizons and wins at long ones.
+- **Step 10 — ablations.** RevIN reproduces. The lookback claim reproduces once
+  the sweep covers the paper's full range: MSE falls monotonically from 0.4386 at
+  L=24 to 0.3720 at L=336. My first sweep started at L=96 and reported the claim
+  as holding only "in direction" — it had measured the flat tail, since almost
+  all of the improvement (0.4386 → 0.3873) happens over L=24…96. A reminder that
+  where you sample decides what you conclude. Channel independence does **not**
+  reproduce Table 7 here: mixing ties at short horizons and wins at long ones.
 - **Step 11 — CGM.** Channel mixing beats independence when `meal`/`bolus`
   causally drive `cgm` — but it also wins in the zeroed-driver control, and it
   carries 4.4% more parameters. Most of the apparent gain is capacity, not
