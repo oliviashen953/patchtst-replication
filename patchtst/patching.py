@@ -94,6 +94,15 @@ class Patchify(nn.Module):
         stride: S, how far the window advances. S == P gives no overlap;
             S < P gives overlapping patches (the paper uses P=16, S=8).
         pad_end: replicate the final timestep `stride` times to gain one patch.
+        align: only consulted when `pad_end=False`, where the patches usually
+            do not tile `seq_len` exactly and some timesteps must be dropped.
+            "start" keeps the windows anchored at t=0 and drops the TAIL;
+            "end" anchors them at the last timestep and drops the HEAD.
+            Step 12 needs "end": self-supervised pretraining turns padding off
+            (a padded patch is a partly-synthetic reconstruction target), and
+            dropping the most recent timesteps of a forecasting window is much
+            worse than dropping the oldest ones. The official self-supervised
+            code makes the same choice via its `s_begin` offset.
 
     Example (1 batch, 10 timesteps, 1 channel; P=2, S=1, no padding):
 
@@ -108,11 +117,20 @@ class Patchify(nn.Module):
     is not optional, because channel independence in Step 5 depends on it.
     """
 
-    def __init__(self, patch_len: int = 16, stride: int = 8, pad_end: bool = True):
+    def __init__(
+        self,
+        patch_len: int = 16,
+        stride: int = 8,
+        pad_end: bool = True,
+        align: str = "start",
+    ):
         super().__init__()
+        if align not in {"start", "end"}:
+            raise ValueError(f"align must be 'start' or 'end', got {align!r}")
         self.patch_len = int(patch_len)
         self.stride = int(stride)
         self.pad_end = bool(pad_end)
+        self.align = align
         # ReplicationPad1d((left, right)) -- pad only on the right.
         self.pad = nn.ReplicationPad1d((0, self.stride)) if self.pad_end else None
 
@@ -128,6 +146,16 @@ class Patchify(nn.Module):
 
         if self.pad is not None:
             x = self.pad(x)
+        elif self.align == "end":
+            # Unfold always starts at index 0, so without padding it silently
+            # drops whatever does not tile at the END -- the most recent
+            # timesteps, which are the ones a forecaster can least afford to
+            # lose. Trim the head instead so the last patch finishes exactly on
+            # the last timestep. With L=512, P=S=12 this drops rows 0..7 and
+            # leaves 42 clean non-overlapping patches.
+            n = num_patches(x.shape[-1], self.patch_len, self.stride, pad_end=False)
+            covered = self.patch_len + self.stride * (n - 1)
+            x = x[..., x.shape[-1] - covered:]
 
         # unfold slides a window of `size` along `dimension`, stepping by `step`,
         # and appends the window contents as a NEW trailing axis:

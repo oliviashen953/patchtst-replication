@@ -56,6 +56,10 @@ class PatchTST(nn.Module):
         head_dropout: dropout inside the prediction head.
         individual: one prediction head per channel instead of a shared one.
         revin: use reversible instance normalization.
+        revin_affine: give RevIN learnable per-channel scale/shift. Step 12
+            turns this off, matching the official self-supervised code.
+        pad_end, align: patch geometry, see Patchify. Step 12 uses
+            pad_end=False with align="end" for non-overlapping patches.
     """
 
     def __init__(
@@ -74,7 +78,10 @@ class PatchTST(nn.Module):
         head_dropout: float = 0.0,
         individual: bool = False,
         revin: bool = True,
+        revin_affine: bool = True,
         channel_mixing: bool = False,
+        pad_end: bool = True,
+        align: str = "start",
     ):
         super().__init__()
         self.n_channels = int(n_channels)
@@ -92,7 +99,10 @@ class PatchTST(nn.Module):
             d_ff=d_ff,
             dropout=dropout,
             revin=revin,
+            revin_affine=revin_affine,
             channel_mixing=channel_mixing,
+            pad_end=pad_end,
+            align=align,
         )
         self.n_patches = self.backbone.n_patches
 

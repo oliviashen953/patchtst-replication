@@ -84,7 +84,10 @@ class ChannelIndependentBackbone(nn.Module):
         d_ff: int = 256,
         dropout: float = 0.2,
         revin: bool = True,
+        revin_affine: bool = True,
         channel_mixing: bool = False,
+        pad_end: bool = True,
+        align: str = "start",
     ):
         super().__init__()
         self.n_channels = int(n_channels)
@@ -92,8 +95,9 @@ class ChannelIndependentBackbone(nn.Module):
         self.d_model = int(d_model)
         self.use_revin = bool(revin)
         self.channel_mixing = bool(channel_mixing)
+        self.pad_end = bool(pad_end)
 
-        self.n_patches = num_patches(seq_len, patch_len, stride, pad_end=True)
+        self.n_patches = num_patches(seq_len, patch_len, stride, pad_end=self.pad_end)
 
         # Under channel mixing every channel's patches share ONE sequence, so
         # the encoder sees C*N tokens and needs that many position slots.
@@ -101,8 +105,12 @@ class ChannelIndependentBackbone(nn.Module):
             self.n_channels * self.n_patches if self.channel_mixing else self.n_patches
         )
 
-        self.revin = RevIN(self.n_channels) if self.use_revin else None
-        self.patchify = Patchify(patch_len=patch_len, stride=stride, pad_end=True)
+        self.revin = (
+            RevIN(self.n_channels, affine=revin_affine) if self.use_revin else None
+        )
+        self.patchify = Patchify(
+            patch_len=patch_len, stride=stride, pad_end=self.pad_end, align=align
+        )
         self.encoder = PatchEncoder(
             patch_len=patch_len,
             n_patches=encoder_tokens,
@@ -113,8 +121,17 @@ class ChannelIndependentBackbone(nn.Module):
             dropout=dropout,
         )
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """x: [B, seq_len, n_channels] -> [B, n_channels, n_patches, d_model]."""
+    def forward(self, x: torch.Tensor, patch_transform=None) -> torch.Tensor:
+        """x: [B, seq_len, n_channels] -> [B, n_channels, n_patches, d_model].
+
+        `patch_transform`, if given, is called on the normalized patches
+        [B, C, N, P] before they reach the encoder and must return a tensor of
+        the same shape. Step 12's masking is the only user: it needs to see the
+        patches *after* RevIN (so the reconstruction target is in normalized
+        units) but *before* the encoder. Leaving the hook here rather than
+        writing a second backbone keeps the parameter names identical, which is
+        what makes the pretrained weights transferable to the forecaster.
+        """
         if x.ndim != 3 or x.shape[1:] != (self.seq_len, self.n_channels):
             raise ValueError(
                 f"expected [batch, {self.seq_len}, {self.n_channels}], "
@@ -126,6 +143,9 @@ class ChannelIndependentBackbone(nn.Module):
             x = self.revin.normalize(x)
 
         patches = self.patchify(x)          # [B, C, N, P]
+
+        if patch_transform is not None:
+            patches = patch_transform(patches)
 
         # THIS IS THE LINE THAT CREATES CHANNEL INDEPENDENCE.
         # the line is:
