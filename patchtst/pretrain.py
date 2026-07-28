@@ -105,16 +105,33 @@ def random_patch_mask(
     batch, channels, n_patches, _ = patches.shape
     n_keep = int(n_patches * (1.0 - mask_ratio))
 
-    # Rank the patches of each (sample, channel) by a random key and keep the
-    # lowest `n_keep`. Sorting noise is how the official code does it, and it is
-    # what makes the kept count exact.
+    # Step 12 exercise — build the mask.
+    #
+    #   noise = torch.rand(batch, channels, n_patches, device=..., generator=...)
+    #   rank  = noise.argsort(-1).argsort(-1)
+    #   mask  = rank >= n_keep
+    #
+    # The double argsort is the trick worth understanding. The first gives the
+    # positions in sorted order; applying argsort AGAIN inverts that permutation
+    # and gives each position its own rank. Keeping every position whose rank is
+    # below n_keep therefore keeps an exact count, drawn uniformly at random --
+    # which `torch.rand(...) < ratio` would not do.
+    #
+    # Note the noise is [B, C, N], one draw per (sample, channel). A [B, N] draw
+    # broadcast over channels would mask the same positions in every channel and
+    # quietly make the task easier, since a channel's masked block could then be
+    # inferred from correlated channels rather than from the sequence.
+    #
+    # Answer:
     noise = torch.rand(
         batch, channels, n_patches, device=patches.device, generator=generator
     )
     rank = noise.argsort(dim=-1).argsort(dim=-1)     # rank of each position
     mask = rank >= n_keep                           # True = removed
 
-    masked = patches * (~mask).unsqueeze(-1)        # broadcast over patch_len
+    # Zero the removed patches. unsqueeze(-1) broadcasts the [B, C, N] mask over
+    # the patch_len axis -- every value in a removed patch goes, not just one.
+    masked = patches * (~mask).unsqueeze(-1)
     return masked, mask
 
 
@@ -138,6 +155,18 @@ def masked_reconstruction_loss(
     """
     if mask.dtype != torch.bool:
         mask = mask.bool()
+
+    # Step 12 exercise — reduce the squared error to a masked-only mean.
+    #
+    #   per_patch = ((recon - target) ** 2).mean(dim=-1)   # [B, C, N]
+    #   return (per_patch * mask).sum() / mask.sum()
+    #
+    # Two reductions, in this order. Mean over patch_len first so each patch
+    # contributes once whatever P is; then a mask-weighted sum divided by the
+    # NUMBER OF MASKED PATCHES -- not by the total, which would scale the loss
+    # by the mask ratio and quietly change the effective learning rate.
+    #
+    # Answer:
     per_patch = ((recon - target) ** 2).mean(dim=-1)     # [B, C, N]
     denom = mask.sum()
     if denom == 0:
@@ -281,6 +310,18 @@ def transfer_backbone(
     target = model.state_dict()
     copied, skipped = 0, []
     for name, tensor in pretrained.items():
+        # Step 12 exercise — decide what crosses over.
+        #
+        #   if not name.startswith("backbone."): continue
+        #
+        # That one line IS the definition of "the learned representation": the
+        # RevIN statistics, the patch embedding, the position encoding and the
+        # three encoder layers. Everything named `head.*` stays behind, because
+        # the pretrain head maps d_model -> patch_len and the forecasting head
+        # maps n_patches*d_model -> pred_len. They are not the same layer and
+        # would not even match in shape.
+        #
+        # Answer:
         if not name.startswith("backbone."):
             continue
         if name not in target:
