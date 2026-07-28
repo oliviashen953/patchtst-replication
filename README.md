@@ -83,6 +83,15 @@ turns out to be *which epoch validation kept*, not how the model was trained:
 
 ![Reported versus test-oracle checkpoint selection, and the MSE that selection costs](figures/f3_selection_cost.png)
 
+The paper's sharpest claim is that PatchTST *improves* with a longer look-back
+where other Transformers degrade. My first sweep ran L = 96…720 and found a
+nearly flat line, so I reported the claim as holding only "in direction."
+Extending the sweep to the paper's own range — L = 24, 48, 96, 192, 336, 720 —
+showed why: almost all of the improvement happens over L = 24…96, which I had
+never sampled. The claim reproduces; my sampling did not.
+
+![Channel independence, RevIN, and the look-back sweep at both horizons](figures/f4_ablations.png)
+
 All seven figures, with the tables they come from, are in
 [RESULTS.md](RESULTS.md); `python experiments/figures.py` redraws every one of
 them from the committed result JSONs. The plotting follows the paper's own
