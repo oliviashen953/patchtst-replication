@@ -223,9 +223,14 @@ def f3_selection(dpi: int):
 def f4_ablations(dpi: int):
     """Step 10: channel independence, RevIN, and the lookback sweep."""
     base, mix, norevin = etth1("base"), etth1("mix"), etth1("norevin")
-    look = {r["model"]["seq_len"]: r for r in load(RESULTS, "etth1_look_*.json")}
+    # Key on (T, L), NOT on L alone. The lookback runs are tagged look_L<L> at
+    # BOTH horizons, so keying on seq_len silently collapses look_L96_h96 and
+    # look_L96_h720 onto one entry and keeps whichever the glob yielded last.
+    # Same failure that put a smoke run in the Step 12 table; see collate.py.
+    look = {(r["pred_len"], r["model"]["seq_len"]): r
+            for r in load(RESULTS, "etth1_look_*.json")}
 
-    fig, axes = plt.subplots(1, 3, figsize=(13, 3.8), constrained_layout=True)
+    fig, axes = plt.subplots(1, 4, figsize=(17, 3.8), constrained_layout=True)
     series_plot(
         axes[0], HORIZONS,
         [("channel-independent", [base[h]["test"]["mse"] for h in HORIZONS]),
@@ -238,12 +243,20 @@ def f4_ablations(dpi: int):
          ("without RevIN", [norevin[h]["test"]["mse"] for h in HORIZONS])],
         xlabel="T", ylabel="MSE", title="ETTh1, RevIN")
     axes[1].legend()
-    ls = sorted(look)
-    # The paper's own Figure 2 axes: MSE against L at a fixed horizon.
-    series_plot(
-        axes[2], ls, [("PatchTST (ours)", [look[L]["test"]["mse"] for L in ls])],
-        xlabel="L", ylabel="MSE", title="ETTh1 T=96, varying look-back")
-    axes[2].legend()
+    # The paper's own Figure 2 axes: MSE against L, one panel per horizon.
+    # Figure 2's caption fixes them -- "L = 24, 48, 96, 192, 336, 720 ... T = 96,
+    # 720" -- so both panels are drawn even though only T=96 was swept at first.
+    # L=512 is ours, not the paper's; it is the PatchTST/64 geometry.
+    for ax, T in ((axes[2], 96), (axes[3], 720)):
+        ls = sorted(L for (t, L) in look if t == T)
+        if not ls:
+            ax.set_visible(False)
+            continue
+        series_plot(
+            ax, ls,
+            [("PatchTST (ours)", [look[(T, L)]["test"]["mse"] for L in ls])],
+            xlabel="L", ylabel="MSE", title=f"ETTh1 T={T}, varying look-back")
+        ax.legend()
     return save(fig, "f4_ablations", dpi)
 
 
