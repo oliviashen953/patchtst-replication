@@ -91,11 +91,18 @@ def train_epoch(
         #   optimizer.step()
         #
         # Then accumulate: total += loss.item(); n_batches += 1
-        #
         # zero_grad() FIRST. PyTorch accumulates gradients by default, so
         # forgetting it silently sums every batch's gradients together -- your
         # loss will look erratic and you will blame the learning rate.
-        raise NotImplementedError("Step 8: implement the training step")
+        optimizer.zero_grad()
+        pred = model(x)
+        loss = nn.functional.mse_loss(pred, y)
+        loss.backward()
+        if grad_clip_norm:
+            torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip_norm)
+        optimizer.step()
+        total += loss.item()
+        n_batches += 1
 
     return total / max(1, n_batches)
 
@@ -119,16 +126,10 @@ def evaluate(
 
         # TODO(you): accumulate squared and absolute error.
         #
-        #   pred = model(x)
-        #   sse += ((pred - y) ** 2).sum().item()
-        #   sae += (pred - y).abs().sum().item()
-        #   count += y.numel()
-        #
-        # Accumulate SUMS and divide once at the end -- NOT a running mean of
-        # per-batch means. Those differ whenever the last batch is short, and
-        # the discrepancy is small enough to look like noise while quietly
-        # making your numbers not match anyone else's.
-        raise NotImplementedError("Step 8: implement the evaluation accumulation")
+        pred = model(x)
+        sse += ((pred - y) ** 2).sum().item()
+        sae += (pred - y).abs().sum().item()
+        count += y.numel()
 
     return {"mse": sse / max(1, count), "mae": sae / max(1, count)}
 
@@ -182,23 +183,22 @@ def fit(
 
         # TODO(you): track the best model and decide whether to stop.
         #
-        #   improved = metrics["mse"] < history.best_val_mse - config.min_delta
-        #   if improved:
-        #       history.best_val_mse = metrics["mse"]
-        #       history.best_epoch = epoch
-        #       best_state = {k: v.detach().cpu().clone()
-        #                     for k, v in model.state_dict().items()}
-        #       epochs_without_improvement = 0
-        #   else:
-        #       epochs_without_improvement += 1
-        #       if epochs_without_improvement >= config.patience:
-        #           history.stopped_early = True
-        #           break
-        #
+        improved = metrics["mse"] < history.best_val_mse - config.min_delta
+        if improved:
+            history.best_val_mse = metrics["mse"]
+            history.best_epoch = epoch
+            best_state = {k: v.detach().cpu().clone()
+                        for k, v in model.state_dict().items()}
+            epochs_without_improvement = 0
+        else:
+            epochs_without_improvement += 1
+            if epochs_without_improvement >= config.patience:
+                history.stopped_early = True
+                break
+
         # .clone() matters: state_dict() returns references to live tensors, so
         # without it "best_state" would keep changing as training continues and
         # you would restore the LAST weights, not the best ones.
-        raise NotImplementedError("Step 8: implement best-tracking and early stopping")
 
     # Restore the best weights so the caller evaluates the right model.
     if best_state is not None:
