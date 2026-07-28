@@ -114,6 +114,11 @@ def main() -> None:
                              "crosses channels (the thing PatchTST avoids)")
     parser.add_argument("--seq-len", type=int, default=None,
                         help="override the lookback window L (default 336)")
+    parser.add_argument("--probe-test", action="store_true",
+                        help="record per-epoch TEST mse for inspection. Never "
+                             "used for selection -- the best checkpoint is still "
+                             "chosen on validation. Answers whether the "
+                             "val-optimal epoch is the test-optimal one.")
     args = parser.parse_args()
 
     if not CSV.exists():
@@ -154,9 +159,15 @@ def main() -> None:
           f"device={args.device}", flush=True)
 
     started = time.time()
-    history = fit(model, train_set, val_set, config)
+    history = fit(model, train_set, val_set, config,
+                  probe_set=test_set if args.probe_test else None)
     metrics = test(model, test_set, config)
     elapsed = time.time() - started
+
+    probe_best_epoch = (
+        min(range(len(history.probe_mse)), key=history.probe_mse.__getitem__)
+        if history.probe_mse else None
+    )
 
     reference = PAPER_PATCHTST_42[args.pred_len]
     record = {
@@ -185,7 +196,18 @@ def main() -> None:
             torch.cuda.get_device_name(0) if args.device.startswith("cuda") else platform.processor()
         ),
         "history": {"val_mse": history.val_mse, "val_mae": history.val_mae,
-                    "train_loss": history.train_loss},
+                    "train_loss": history.train_loss,
+                    # Empty unless --probe-test. Diagnostic only.
+                    "probe_mse": history.probe_mse},
+        # What a TEST-selected oracle would have kept. NOT a reportable result --
+        # it selects on test. Its job is to separate "the model cannot do better"
+        # from "validation picked the wrong epoch".
+        "probe_best_epoch": probe_best_epoch,
+        "probe_best_mse": min(history.probe_mse) if history.probe_mse else None,
+        "probe_at_val_best": (
+            history.probe_mse[history.best_epoch]
+            if history.probe_mse and 0 <= history.best_epoch < len(history.probe_mse)
+            else None),
     }
 
     out = RESULTS / f"{name}.json"
@@ -196,6 +218,14 @@ def main() -> None:
           f"(paper {reference['mae']:.3f}, {record['delta_mae']:+.4f})", flush=True)
     print(f"[{name}] best epoch {history.best_epoch}/{len(history.val_mse)}, "
           f"{elapsed/60:.1f} min -> {out}", flush=True)
+
+    if probe_best_epoch is not None:
+        cost = record["probe_at_val_best"] - record["probe_best_mse"]
+        print(f"[{name}] selection: val picked epoch {history.best_epoch} "
+              f"(test there {record['probe_at_val_best']:.4f}); a test-oracle "
+              f"would have picked epoch {probe_best_epoch} "
+              f"(test {record['probe_best_mse']:.4f}), i.e. {cost:+.4f} left on "
+              f"the table by selecting on val", flush=True)
 
 
 if __name__ == "__main__":

@@ -31,9 +31,14 @@ PRED_LEN=${HORIZONS[$SLURM_ARRAY_TASK_ID]}
 
 # Override at submit time, e.g.
 #     LRADJ=type3 TAG=type3 sbatch scripts/train_slurm.sh
+#     PROBE=1 sbatch scripts/train_slurm.sh
 LRADJ=${LRADJ:-cosine}
 TAG=${TAG:-base}
 WD=${WD:-0.001}
+# PROBE=1 logs per-epoch TEST mse for inspection. It never affects selection,
+# and the probe loader carries its own RNG, so the run stays bit-identical.
+PROBE_FLAG=""
+[ "${PROBE:-0}" = "1" ] && PROBE_FLAG="--probe-test"
 
 REPO=$HOME/patchtst-replication
 VENV=$HOME/venvs/patchtst-env
@@ -56,6 +61,7 @@ nvidia-smi --query-gpu=name,memory.total --format=csv,noheader || true
     --num-workers 4 \
     --lradj "$LRADJ" \
     --weight-decay "$WD" \
-    --tag "$TAG"
+    --tag "$TAG" \
+    $PROBE_FLAG
 
 echo "done pred_len=$PRED_LEN"
