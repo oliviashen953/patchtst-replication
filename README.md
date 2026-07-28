@@ -7,6 +7,7 @@ A from-scratch reimplementation of:
 > Nie, Y., Nguyen, N. H., Sinthong, P. & Kalagnanam, J. (2023).
 > *A Time Series is Worth 64 Words: Long-term Forecasting with Transformers.*
 > ICLR 2023. arXiv:2211.14730
+> Official code: <https://github.com/yuqinie98/PatchTST>
 
 The idea in one line: **stop feeding Transformers one timestep at a time.**
 Group timesteps into *patches* and treat each patch as a token — like words
@@ -72,6 +73,21 @@ in [RESULTS.md](RESULTS.md); each step is written up in
 [tutorial/](tutorial/) ([9](tutorial/STEP09_reproduce.md) ·
 [10](tutorial/STEP10_ablations.md) · [11](tutorial/STEP11_cgm.md) ·
 [12](tutorial/STEP12_pretrain.md)).
+
+### Results at a glance
+
+![Ours versus PatchTST/42 on ETTh1 at all four horizons, MSE and MAE](figures/f1_replication.png)
+
+Three horizons land on the paper. H=720 misses by +0.049 — and +0.047 of that
+turns out to be *which epoch validation kept*, not how the model was trained:
+
+![Reported versus test-oracle checkpoint selection, and the MSE that selection costs](figures/f3_selection_cost.png)
+
+All seven figures, with the tables they come from, are in
+[RESULTS.md](RESULTS.md); `python experiments/figures.py` redraws every one of
+them from the committed result JSONs. The plotting follows the paper's own
+conventions — Figure 2's style for the metric panels, and the official repo's
+six-line `visual()` for the forecast panels.
 
 Four findings, none of them a clean win:
 

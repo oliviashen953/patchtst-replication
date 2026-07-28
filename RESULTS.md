@@ -1,5 +1,21 @@
 # Results
 
+Every figure below is regenerated from the committed result JSONs by
+`python experiments/figures.py` — nothing is drawn by hand, so a plot cannot
+drift away from the table above it. The one exception is the forecast figure,
+which loads the saved checkpoints; those are `.pt` files and too large to
+track, so redrawing that one means training the runs first.
+
+**The plotting follows the paper, not my taste.** The metric figures use the
+conventions of the paper's Figure 2 (`pic/varying_L.png` in the official repo):
+matplotlib defaults, a marker shape per series, dotted x-gridlines, one legend
+below. The forecast figure reproduces `visual()` from
+`PatchTST_supervised/utils/tools.py` exactly — the whole of the official repo's
+plotting code, six lines of it.
+
+**Reading convention.** Any series labelled *oracle* selects its epoch on the
+**test** split. Those are diagnostics, never results.
+
 ## ETTh1, multivariate, lookback L=336 (PatchTST/42)
 
 First reproduction run. SLURM array on one A40 per horizon, ~2 minutes each.
@@ -17,8 +33,23 @@ Reference values are PatchTST/42 from Table 3 of the paper. **/42, not /64** —
 our L=336 with P=16, S=8 gives 42 patches; PatchTST/64 uses L=512 and is stronger
 at every horizon, so comparing against it would be wrong.
 
+![Ours versus PatchTST/42 at all four horizons, MSE and MAE](figures/f1_replication.png)
+
 Three of four horizons reproduce within 0.01 MSE, and 96/192 come in slightly
 *below* the published values. H=720 is off by +0.049.
+
+What that looks like as an actual forecast, drawn the way the official repo
+draws it — `visual()` concatenates the lookback onto the front of both series
+and plots the last channel, which is why the two lines coincide on the left of
+every panel. Top row is the H=96 model, bottom row H=720, both at their
+best-validation weights:
+
+![Ground truth against prediction on ETTh1 test windows, upstream visual() convention](figures/f7_forecasts.png)
+
+The bottom row is worth staring at. The H=720 model emits an almost flat
+oscillation around a constant level: it has learned the mean and the daily
+period and nothing else. That is what a checkpoint from **epoch 2** looks like,
+and the next two sections are about why validation stopped there.
 
 ## Why H=720 misses
 
@@ -32,6 +63,8 @@ turns upward earlier and earlier:
 | 192 | 1.153 | 0.931 (ep 20) | 1.022 | 19 |
 | 336 | 1.325 | 1.182 (ep 10) | 1.382 | 10 |
 | 720 | 1.573 | 1.499 (ep 2) | **2.031** | 2 |
+
+![Per-epoch train loss, validation MSE and probe test MSE at each horizon](figures/f2_training_curves.png)
 
 That is overfitting, and it scales with the horizon for a structural reason: the
 flatten head is `n_patches × d_model → pred_len`, so its parameters grow linearly
@@ -124,6 +157,8 @@ per-epoch test curve answers the question outright.
 | 336 | 10 | 14 | 0.4391 | 0.4358 | 0.0032 | 0.431 | +0.0048 |
 | 720 | **2** | **10** | 0.4981 | **0.4508** | **0.0473** | 0.449 | **+0.0018** |
 
+![Reported versus test-oracle selection at each horizon, and the cost of selecting on validation](figures/f3_selection_cost.png)
+
 The selection cost is monotone in the horizon — 0.0010, 0.0014, 0.0032, 0.0473 —
 which is the same shape as the val/test ratio in the table above, and it is not a
 coincidence: they are two views of one fact.
@@ -185,6 +220,7 @@ Recorded rather than hidden, since they may explain part of the gap.
 mkdir -p logs
 sbatch scripts/train_slurm.sh              # array 0-3, one horizon each
 python experiments/collate.py --tag base   # --tag is required once Step 10 has run
+python experiments/figures.py              # redraws every figure in figures/
 ```
 
 ---
@@ -193,6 +229,8 @@ python experiments/collate.py --tag base   # --tag is required once Step 10 has 
 
 13 runs, single seed, ~2 min each on an A40. Differences below 0.002 MSE are
 reported as ties.
+
+![Channel independence versus mixing, RevIN on versus off, and the lookback sweep](figures/f4_ablations.png)
 
 ## A. Channel independence vs channel mixing (ETTh1, L=336)
 
@@ -276,6 +314,8 @@ Synthetic CGM (`patchtst/cgm.py`), 4 h lookback → 1 h ahead, seed 2021,
 
 MAE tracks RMSE (9.111 → 8.575 informative; 3.249 → 3.123 control).
 
+![CGM RMSE for the 2x2, with the parameter count of each architecture beside it](figures/f5_cgm.png)
+
 **The prediction was (b) beats (a) *and* (d) does not beat (c). Half of it
 held.** Mixing wins with informative drivers, as expected — but it also wins in
 the control, where the causal link has been removed from the generator. So the
@@ -330,6 +370,7 @@ result about glucose.
 mkdir -p logs
 sbatch scripts/cgm_slurm.sh      # array 0-3, one cell each, ~75 s
 python experiments/collate_cgm.py
+python experiments/figures.py --only f5
 ```
 
 ---
@@ -354,6 +395,8 @@ Pretraining works as advertised: masked reconstruction MSE 0.9098 → 0.4261 ove
 | 192 | 0.4041 | 0.4182 | 0.4357 | +0.0141 | +0.0316 | pretraining hurts |
 | 336 | **0.6405** | 0.4620 | 0.4568 | −0.1785 | −0.1837 | pretraining helps |
 | 720 | 0.6084 | 0.5920 | 0.5848 | −0.0163 | −0.0236 | pretraining helps |
+
+![The three SSL arms under validation selection and under one fixed selection rule](figures/f6_ssl.png)
 
 Read it and stop there and the story is "pretraining helps at three horizons out
 of four." **That story is wrong**, and the tell is the bolded cell: `scratch` at
@@ -463,6 +506,7 @@ mkdir -p logs
 PRE=$(sbatch --parsable --array=0 scripts/ssl_slurm.sh)     # 100 epochs, ~6 min
 sbatch --dependency=afterok:$PRE --array=1-12 scripts/ssl_slurm.sh
 python experiments/collate_ssl.py
+python experiments/figures.py --only f6
 ```
 
 Downstream arms reuse `results_ssl/pretrain_etth1_mask40.pt`, so re-running
