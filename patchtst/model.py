@@ -82,6 +82,11 @@ class PatchTST(nn.Module):
         channel_mixing: bool = False,
         pad_end: bool = True,
         align: str = "start",
+        encoder_impl: str = "torch",
+        norm: str = "layer",
+        pre_norm: bool = True,
+        res_attention: bool = False,
+        attn_dropout: float | None = None,
     ):
         super().__init__()
         self.n_channels = int(n_channels)
@@ -103,6 +108,11 @@ class PatchTST(nn.Module):
             channel_mixing=channel_mixing,
             pad_end=pad_end,
             align=align,
+            encoder_impl=encoder_impl,
+            norm=norm,
+            pre_norm=pre_norm,
+            res_attention=res_attention,
+            attn_dropout=attn_dropout,
         )
         self.n_patches = self.backbone.n_patches
 

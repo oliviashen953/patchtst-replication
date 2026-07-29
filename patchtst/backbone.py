@@ -88,6 +88,11 @@ class ChannelIndependentBackbone(nn.Module):
         channel_mixing: bool = False,
         pad_end: bool = True,
         align: str = "start",
+        encoder_impl: str = "torch",
+        norm: str = "layer",
+        pre_norm: bool = True,
+        res_attention: bool = False,
+        attn_dropout: float | None = None,
     ):
         super().__init__()
         self.n_channels = int(n_channels)
@@ -119,6 +124,11 @@ class ChannelIndependentBackbone(nn.Module):
             n_layers=n_layers,
             d_ff=d_ff,
             dropout=dropout,
+            impl=encoder_impl,
+            norm=norm,
+            pre_norm=pre_norm,
+            res_attention=res_attention,
+            attn_dropout=attn_dropout,
         )
 
     def forward(self, x: torch.Tensor, patch_transform=None) -> torch.Tensor:

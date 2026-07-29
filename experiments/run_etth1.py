@@ -114,6 +114,37 @@ def main() -> None:
                              "crosses channels (the thing PatchTST avoids)")
     parser.add_argument("--seq-len", type=int, default=None,
                         help="override the lookback window L (default 336)")
+    # Step 13 sweeps. Every one of these defaults to the Step 9 configuration,
+    # so omitting them reproduces the baseline exactly.
+    parser.add_argument("--patch-len", type=int, default=None,
+                        help="P. Figure 4 sweeps this over [2..40]")
+    parser.add_argument("--stride", type=int, default=None,
+                        help="S. Defaults to P/2, preserving the 50%% overlap "
+                             "of the paper's P=16,S=8")
+    parser.add_argument("--no-patching", action="store_true",
+                        help="Table 7 cases (b) and (d): one token per timestep "
+                             "(P=S=1, no end padding), i.e. the original TST")
+    parser.add_argument("--d-model", type=int, default=None)
+    parser.add_argument("--n-heads", type=int, default=None)
+    parser.add_argument("--n-layers", type=int, default=None)
+    parser.add_argument("--d-ff", type=int, default=None,
+                        help="defaults to 2*d_model when --d-model is given")
+    # Architecture fidelity: each of these is an upstream default we do not
+    # currently match. See RESULTS.md, "Known deviations".
+    parser.add_argument("--encoder-impl", default="torch", choices=["torch", "tst"],
+                        help="'tst' is the upstream-shaped layer, needed for any "
+                             "of the three flags below")
+    parser.add_argument("--norm", default="layer", choices=["layer", "batch"],
+                        help="upstream default is BatchNorm")
+    parser.add_argument("--post-norm", action="store_true",
+                        help="norm after the residual add, as upstream does "
+                             "(pre_norm=False)")
+    parser.add_argument("--res-attention", action="store_true",
+                        help="RealFormer residual attention, on by default upstream")
+    parser.add_argument("--attn-dropout", type=float, default=None,
+                        help="upstream keeps this at 0 while dropout=0.3 elsewhere")
+    parser.add_argument("--no-revin-affine", action="store_true",
+                        help="upstream's --affine defaults to 0")
     parser.add_argument("--probe-test", action="store_true",
                         help="record per-epoch TEST mse for inspection. Never "
                              "used for selection -- the best checkpoint is still "
@@ -132,6 +163,42 @@ def main() -> None:
         model_kwargs["channel_mixing"] = True
     if args.seq_len is not None:
         model_kwargs["seq_len"] = args.seq_len
+
+    if args.no_patching:
+        # One token per timestep. pad_end would otherwise buy a 337th token
+        # that is a duplicate of the last one, which is not what "no patching"
+        # means -- the original TST has exactly L tokens.
+        model_kwargs.update(patch_len=1, stride=1, pad_end=False)
+    else:
+        if args.patch_len is not None:
+            model_kwargs["patch_len"] = args.patch_len
+            # The paper does not state the stride for Figure 4. Holding the
+            # overlap ratio fixed at the P=16,S=8 setting is the assumption
+            # that keeps the sweep about patch length and nothing else.
+            model_kwargs["stride"] = max(1, args.patch_len // 2)
+        if args.stride is not None:
+            model_kwargs["stride"] = args.stride
+
+    if args.d_model is not None:
+        model_kwargs["d_model"] = args.d_model
+        model_kwargs["d_ff"] = args.d_ff if args.d_ff is not None else 2 * args.d_model
+    if args.d_ff is not None:
+        model_kwargs["d_ff"] = args.d_ff
+    if args.n_heads is not None:
+        model_kwargs["n_heads"] = args.n_heads
+    if args.n_layers is not None:
+        model_kwargs["n_layers"] = args.n_layers
+
+    model_kwargs["encoder_impl"] = args.encoder_impl
+    model_kwargs["norm"] = args.norm
+    if args.post_norm:
+        model_kwargs["pre_norm"] = False
+    if args.res_attention:
+        model_kwargs["res_attention"] = True
+    if args.attn_dropout is not None:
+        model_kwargs["attn_dropout"] = args.attn_dropout
+    if args.no_revin_affine:
+        model_kwargs["revin_affine"] = False
 
     train_set, val_set, test_set = make_datasets(
         str(CSV), seq_len=model_kwargs["seq_len"], pred_len=args.pred_len
