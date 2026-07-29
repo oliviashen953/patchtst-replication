@@ -61,6 +61,16 @@ HORIZONS = [96, 192, 336, 720]
 PAPER_42 = {96: (0.375, 0.399), 192: (0.414, 0.421),
             336: (0.431, 0.436), 720: (0.449, 0.466)}
 
+# Table 9, ETTh1: the paper's own look-back sweep. Its curve turns up past
+# L=336 at three of four horizons, exactly as ours does -- the monotone claim
+# in the text is about Figure 2's three large datasets, not this one.
+PAPER_TABLE9 = {
+    96:  {24: 0.464, 48: 0.410, 96: 0.393, 192: 0.382, 336: 0.375, 720: 0.376},
+    192: {24: 0.521, 48: 0.469, 96: 0.445, 192: 0.428, 336: 0.414, 720: 0.413},
+    336: {24: 0.570, 48: 0.516, 96: 0.484, 192: 0.451, 336: 0.431, 720: 0.445},
+    720: {24: 0.575, 48: 0.509, 96: 0.480, 192: 0.452, 336: 0.449, 720: 0.458},
+}
+
 # Paper Figure 2 conventions.
 MARKERS = ["o", "x", "^", "s", "+", "D"]
 
@@ -227,8 +237,11 @@ def f4_ablations(dpi: int):
     # BOTH horizons, so keying on seq_len silently collapses look_L96_h96 and
     # look_L96_h720 onto one entry and keeps whichever the glob yielded last.
     # Same failure that put a smoke run in the Step 12 table; see collate.py.
+    # Step 13 re-ran this on the paper's own grid (look9_*). Prefer those; the
+    # Step 10C runs (look_*) used L=512, which is the PatchTST/64 lookback and
+    # not a Table 9 column.
     look = {(r["pred_len"], r["model"]["seq_len"]): r
-            for r in load(RESULTS, "etth1_look_*.json")}
+            for r in load(RESULTS, "etth1_look9_*.json")}
 
     fig, axes = plt.subplots(1, 4, figsize=(17, 3.8), constrained_layout=True)
     series_plot(
@@ -254,7 +267,8 @@ def f4_ablations(dpi: int):
             continue
         series_plot(
             ax, ls,
-            [("PatchTST (ours)", [look[(T, L)]["test"]["mse"] for L in ls])],
+            [("PatchTST (ours)", [look[(T, L)]["test"]["mse"] for L in ls]),
+             ("PatchTST/42 (paper, Table 9)", [PAPER_TABLE9[T][L] for L in ls])],
             xlabel="L", ylabel="MSE", title=f"ETTh1 T={T}, varying look-back")
         ax.legend()
     return save(fig, "f4_ablations", dpi)
@@ -411,8 +425,53 @@ def f7_forecasts(dpi: int, device: str = "cpu"):
     return save(fig, "f7_forecasts", dpi)
 
 
+def f8_architecture(dpi: int):
+    """Step 13: the encoder norm closes the H=720 gap, and why."""
+    base = etth1("base")
+    variants = [("control", "arch_ctrl"), ("BatchNorm", "arch_bn"),
+                ("post-norm", "arch_postnorm"), ("res-attn", "arch_resattn"),
+                ("attn-drop 0", "arch_attndrop0"), ("all five", "arch_upstream")]
+
+    def mse(tag, h):
+        r = load(RESULTS, f"etth1_{tag}_h{h}_h{h}_s2021.json")
+        return r[0]["test"]["mse"] if r else float("nan")
+
+    def rec(tag, h):
+        r = load(RESULTS, f"etth1_{tag}_h{h}_h{h}_s2021.json")
+        return r[0] if r else None
+
+    fig, axes = plt.subplots(1, 2, figsize=(11, 3.8), constrained_layout=True)
+
+    series_plot(
+        axes[0], HORIZONS,
+        [("ours, as published in Step 9", [base[h]["test"]["mse"] for h in HORIZONS])]
+        + [(label, [mse(tag, h) for h in HORIZONS]) for label, tag in variants]
+        + [("PatchTST/42 (paper)", [PAPER_42[h][0] for h in HORIZONS])],
+        xlabel="T", ylabel="MSE", title="ETTh1 MSE by encoder variant")
+    axes[0].legend(fontsize=7.5, ncol=2)
+
+    # The mechanism: with BatchNorm the epoch validation keeps is the epoch
+    # test would have kept, so the selection error disappears.
+    ax = axes[1]
+    labels, costs = ["Step 9\nbase"], [
+        (base[720].get("probe_at_val_best") or 0) - (base[720].get("probe_best_mse") or 0)]
+    for label, tag in variants:
+        r = rec(tag, 720)
+        if r:
+            labels.append(label.replace(" ", "\n"))
+            costs.append((r.get("probe_at_val_best") or 0) - (r.get("probe_best_mse") or 0))
+    ax.bar(np.arange(len(costs)), costs)
+    ax.set_xticks(np.arange(len(labels)))
+    ax.set_xticklabels(labels, fontsize=8)
+    ax.set_ylabel("MSE lost to checkpoint selection")
+    ax.set_title("T=720: selection error, by variant")
+    ax.grid(axis="x", visible=False)
+    return save(fig, "f8_architecture", dpi)
+
+
 FIGS = {
     "f1": f1_replication,
+    "f8": f8_architecture,
     "f2": f2_curves,
     "f3": f3_selection,
     "f4": f4_ablations,

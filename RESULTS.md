@@ -179,6 +179,16 @@ selected, +0.0491 at H=720, honestly out. What the oracle column establishes is
 narrower and worth more: the residual is a property of the ETTh1 benchmark's
 validation split, not of this implementation.
 
+> **Wrong — corrected in [Step 13](#step-13--architecture-fidelity-and-the-paper-grids).**
+> That last sentence was the most confident claim in this file and it does not
+> survive. The validation/test disagreement at H=720 is a property of *this
+> implementation*: it comes from using LayerNorm where the official code uses
+> BatchNorm. Switch the encoder norm and the selection cost at H=720 falls from
+> 0.0473 to 0.0005 — validation and test start agreeing about when to stop, and
+> the reported number lands on the paper without any oracle. The diagnosis
+> "validation picked the wrong epoch" was right; the attribution to the
+> benchmark rather than to our code was wrong.
+
 The same mechanism, measured independently and far more violently, is in
 [Step 12](#step-12--masked-self-supervised-pretraining-and-what-a-validation-split-can-hide),
 where it cost 0.2189 MSE and inverted the paper's conclusion.
@@ -245,6 +255,32 @@ reported as ties.
 independence better. Here it is a tie at short horizons and mixing wins clearly
 at long ones.
 
+**Sharpened in Step 13.** Table 10 is the full version of Table 7, and its
+ETTh1 block is worth quoting exactly, because it is not what Table 7's headline
+says:
+
+| T | P+CI | CI only | P only | Original |
+|---:|---:|---:|---:|---:|
+| 96 | 0.375 | **0.365** | 0.416 | 0.455 |
+| 192 | 0.414 | **0.403** | 0.459 | 0.503 |
+| 336 | 0.431 | **0.430** | 0.484 | 0.514 |
+| 720 | 0.449 | **0.449** | 0.500 | 0.531 |
+
+On ETTh1 the paper's own **CI-only** column — channel independence with
+patching switched off — beats or ties its full model at every horizon. The
+claim that patching plus channel independence wins is made for the larger
+datasets, and the paper says so.
+
+But note the column that does not match us at all: **P only** is the paper's
+name for channel *mixing* with patching, which is exactly our `mix` runs. The
+paper puts it at 0.416 / 0.459 / 0.484 / 0.500, far *worse* than its full
+model. We measure 0.3719 / 0.4101 / 0.4348 / 0.4540 — far better, and better
+than our own channel-independent runs at the long horizons. Same operation by
+their definition ("reshape to B×(M·P)×N for channel-mixing with patching"),
+opposite conclusion, and a gap too large to be seed noise. That is an open
+discrepancy, and it is the strongest reason to doubt our channel-independent
+path rather than to believe our channel-mixing result.
+
 The H=720 number is the striking part. Channel mixing gives 0.4540 against the
 paper's 0.449 — a gap of +0.005, where our channel-independent run sits at
 +0.049. So the horizon that would not replicate under channel independence
@@ -286,17 +322,42 @@ rather than a contribution.
 | 512 | 0.3731 | flat |
 | 720 | 0.3829 | **worse** |
 
-**Partial reproduction.** MSE improves steadily from L=96 to L=336 (0.3873 →
-0.3720), which supports the paper's claim over that range. But it flattens at
-512 and degrades at 720, whereas the paper reports monotone gains — its
-PatchTST/64 (L=512) beats PatchTST/42 (L=336) on ETTh1.
+**Correction (Step 13).** This section previously called the flattening past
+L=336 a *partial* reproduction, on the grounds that "the paper reports monotone
+gains". It does not — not on ETTh1. Table 9 gives the paper's own ETTh1 sweep,
+and here it is against ours at T=96:
 
-Two plausible causes, untested: the reduced ETTh1 model (d_model=16) may lack
-the capacity to exploit a very long history, and a longer lookback consumes
-training windows, so L=720 trains on fewer examples.
+| L | 24 | 48 | 96 | 192 | 336 | 512 | 720 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| paper (Table 9) | 0.464 | 0.410 | 0.393 | 0.382 | **0.375** | — | 0.376 |
+| ours | — | — | 0.3873 | 0.3801 | **0.3720** | 0.3731 | 0.3829 |
 
-The direction of the paper's central claim is reproduced; its monotonicity is
-not.
+**The paper's ETTh1 curve turns up past L=336 too**, and not only at T=96: its
+L=720 column is worse than its L=336 column at T=96 (0.376 vs 0.375), T=336
+(0.445 vs 0.431) and T=720 (0.458 vs 0.449). Three horizons out of four.
+
+The "performance improves with a longer look-back window" claim is made about
+**Figure 2, whose three panels are Electricity, Traffic and Weather** — all
+large datasets. ETTh1 is not in that figure. The paper's own text hedges to
+"generally speaking", and elsewhere concedes that its ablations are more
+convincing on the larger datasets "where the models are less susceptible to
+overfitting".
+
+So the shape reproduces, and the earlier wording understated the result. What
+does *not* line up is the L=512 point: Table 3's PatchTST/64 (L=512) beats its
+/42 (L=336) at 0.370 vs 0.375, while our L=512 is fractionally worse than our
+L=336 (0.3731 vs 0.3720). The paper's own two tables therefore imply a
+non-monotone curve with a minimum somewhere near 512, and our disagreement with
+it is confined to that one point — 0.0011 MSE, well inside the range the seed
+sweep is being run to measure.
+
+The untested causes for the tail-off stand: the reduced ETTh1 model (d_model=16)
+may lack the capacity to exploit a very long history, and a longer lookback
+consumes training windows, so L=720 trains on fewer examples.
+
+Step 13 re-runs this sweep on the paper's actual grid — L ∈ {24, 48, 96, 192,
+336, 720}, all four horizons — since the grid used here was neither theirs nor
+complete.
 
 ---
 
@@ -511,3 +572,171 @@ python experiments/figures.py --only f6
 
 Downstream arms reuse `results_ssl/pretrain_etth1_mask40.pt`, so re-running
 tasks 1–12 alone is valid as long as that checkpoint is present.
+
+---
+
+# Step 13 — Architecture fidelity, and the paper's actual grids
+
+98 runs, ~2.5 h of A40 time as one SLURM array. Two things prompted it: reading
+the official code closely enough to find four settings we had never matched, and
+noticing that our Step 10 sweeps used grids the paper does not use.
+
+```bash
+mkdir -p logs
+sbatch scripts/sweep_slurm.sh              # array 0-97
+python experiments/collate_sweep.py
+```
+
+## A. The encoder norm was the whole H=720 gap
+
+Four upstream defaults were never matched, each tested alone against a control
+that runs our own settings through the new encoder implementation — so a
+difference cannot be blamed on the rewrite.
+
+| H | base | control | **BatchNorm** | post-norm | res-attn | attn-drop 0 | no affine | all five | paper |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 96 | 0.3720 | 0.3892 | **0.3691** | 0.3876 | 0.3890 | 0.3895 | 0.3716 | **0.3679** | 0.375 |
+| 192 | 0.4110 | 0.4269 | **0.4058** | 0.4258 | 0.4268 | 0.4271 | 0.4109 | **0.4080** | 0.414 |
+| 336 | 0.4391 | 0.4496 | **0.4309** | 0.4493 | 0.4511 | 0.4544 | 0.4408 | **0.4383** | 0.431 |
+| 720 | 0.4981 | 0.4803 | **0.4507** | 0.4736 | 0.4887 | 0.4806 | 0.4971 | **0.4477** | 0.449 |
+
+Compare each variant against the **control**, not against `base` — the control
+differs from `base` only in which code builds the layer, and that alone is worth
+up to 0.017 MSE.
+
+- **BatchNorm instead of LayerNorm: −0.019 / −0.021 / −0.019 / −0.030.** The only
+  change that matters, and it matters at every horizon. Against the seed
+  standard deviations in section B this is 5–20σ at the three short horizons.
+- **post-norm, residual attention, attention dropout 0, RevIN affine: nothing.**
+  Each moves MSE by less than 0.002 at the short horizons, well inside seed
+  noise. My prediction that pre-norm was driving the epoch-2 collapse was wrong;
+  post-norm on its own buys 0.007 at H=720 and nothing anywhere else.
+
+With all five upstream choices, **H=720 reaches 0.4477 against the paper's
+0.449** — the gap that survived two falsified hypotheses and an entire
+diagnostic chapter closes to −0.0013.
+
+### Why it closes: BatchNorm makes validation agree with test
+
+The mechanism is not "BatchNorm is a better normalizer". It is that the epoch
+validation picks stops being the wrong one.
+
+| H=720 variant | epoch kept | reported MSE | test-oracle MSE | selection cost |
+|---|---:|---:|---:|---:|
+| base | 2 | 0.4981 | 0.4508 | **0.0473** |
+| BatchNorm | 5 | 0.4507 | 0.4502 | **0.0005** |
+| all five | 4 | 0.4477 | 0.4477 | **0.0000** |
+
+Under `upstream` the validation-selected epoch *is* the test-optimal epoch. The
+0.0473 that Step 9 attributed to the ETTh1 benchmark's validation split was ours
+all along.
+
+## B. Seed variance (paper Table 14)
+
+Five seeds, four horizons, everything else the Step 9 configuration.
+
+| H | mean | std | paper/42 | mean − paper |
+|---:|---:|---:|---:|---:|
+| 96 | 0.3728 | 0.0009 | 0.375 | −0.0022 |
+| 192 | 0.4140 | 0.0037 | 0.414 | +0.0000 |
+| 336 | 0.4411 | 0.0035 | 0.431 | +0.0101 |
+| 720 | 0.4848 | **0.0171** | 0.449 | +0.0358 |
+
+Individual H=720 runs span 0.4641 to 0.5052. **The seed is worth 0.04 MSE at
+H=720** — nearly as much as the gap we spent three sections explaining. Step 9's
+single seed at 0.4981 was an unlucky draw as well as an under-specified model.
+
+This retires the repo's standing "single seed" caveat and replaces it with a
+number: at H=96–336 anything under ~0.007 is noise; at H=720 anything under
+~0.034 is noise. Several previously-reported differences do not clear that bar,
+including Step 10A's channel-mixing win at H=720 (0.0441, about 2.6σ).
+
+## C. Patching and channel-independence (paper Table 7 / 10)
+
+The two missing cells, so all four now exist. No cell ran out of memory.
+
+| H | P+CI | CI only | P only | neither | best |
+|---:|---:|---:|---:|---:|---|
+| 96 | 0.3720 | 0.3723 | 0.3719 | 0.3761 | tie |
+| 192 | 0.4110 | 0.4104 | 0.4101 | 0.4139 | tie |
+| 336 | 0.4391 | **0.4284** | 0.4348 | 0.4442 | CI |
+| 720 | 0.4981 | **0.4330** | 0.4540 | 0.4963 | CI |
+| *paper* | *0.375 / 0.414 / 0.431 / 0.449* | *0.365 / 0.403 / 0.430 / 0.449* | *0.416 / 0.459 / 0.484 / 0.500* | *0.455 / 0.503 / 0.514 / 0.531* | *CI* |
+
+**This reproduces the paper's ETTh1 result, including the part its headline does
+not say.** In Table 10 the paper's own CI-only column beats or ties its full
+model at every ETTh1 horizon, and ours does the same at the two long ones.
+Dropping patching on this dataset does not hurt; it helps.
+
+What does *not* line up is the magnitude of the weak variants. Our `P only` and
+`neither` columns are far stronger than the paper's (0.4963 vs 0.531 at H=720
+for the original TST). Since every one of our variants keeps RevIN, and the gap
+is consistent across all of them, RevIN is the obvious suspect — untested.
+
+## D. Look-back window on the paper's grid (Table 9)
+
+Step 10C swept L ∈ {96, 192, 336, 512, 720} at T=96. The paper's grid is
+L ∈ {24, 48, 96, 192, 336, 720} at every horizon.
+
+| T | L=24 | L=48 | L=96 | L=192 | L=336 | L=720 |
+|---:|---:|---:|---:|---:|---:|---:|
+| 96 | 0.4386 | 0.3984 | 0.3873 | 0.3801 | **0.3720** | 0.3829 |
+| 192 | 0.4922 | 0.4523 | 0.4379 | 0.4238 | **0.4110** | 0.4216 |
+| 336 | 0.5437 | 0.5026 | 0.4831 | 0.4567 | **0.4391** | 0.4633 |
+| 720 | 0.5462 | 0.5043 | 0.4816 | **0.4583** | 0.4981 | 0.5292 |
+
+The paper's own minimum is at L=336 for three of four horizons, and so is ours.
+Most of the improvement happens over L=24…96, which the earlier sweep never
+sampled — which is why it looked flat and got written up as a partial
+reproduction. It was not; see the correction in Step 10C.
+
+The H=720 row is the exception and it is informative: our minimum sits at
+**L=192 (0.4583)**, not L=336. A shorter lookback means fewer patches, a smaller
+flatten head, and less of the overfitting that section A traced to the encoder
+norm. The paper's H=720 row does not do this.
+
+## E. Patch length (Figure 4) and model size (Figure 5)
+
+| P | 2 | 4 | 8 | 12 | 16 | 24 | 32 | 40 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| MSE | 0.3741 | 0.3750 | 0.3736 | **0.3705** | 0.3720 | 0.3741 | 0.3735 | 0.3755 |
+
+Patch length barely matters: 0.005 across a 20× range of P, with stride held at
+P/2. Even P=2 — 336 tokens, essentially no patching — costs only 0.002. On
+ETTh1 the patching claim is about *cost*, not accuracy.
+
+| (n_layers, d_model) | (3,128) | (3,256) | (4,128) | (4,256) | (5,128) | (5,256) |
+|---|---:|---:|---:|---:|---:|---:|
+| params | 921K | 2.63M | 1.05M | 3.16M | 1.19M | 3.68M |
+| MSE | 0.3850 | 0.3876 | 0.3870 | 0.3926 | 0.3822 | 0.3997 |
+
+Every one of these is worse than the reduced ETTh1 model (d_model=16, 82K
+params, 0.3720) that Appendix A.1.4 prescribes, and the two largest are the
+worst of all. Capacity actively hurts here, which is the appendix's point.
+
+## F. PatchTST/64 does not reproduce
+
+| H | ours /64 | paper /64 | Δ | ours /42 | paper /42 | Δ |
+|---:|---:|---:|---:|---:|---:|---:|
+| 96 | 0.3731 | 0.370 | +0.0031 | 0.3720 | 0.375 | −0.0030 |
+| 192 | 0.4171 | 0.413 | +0.0041 | 0.4110 | 0.414 | −0.0030 |
+| 336 | 0.4576 | 0.422 | +0.0356 | 0.4391 | 0.431 | +0.0081 |
+| 720 | 0.5030 | 0.447 | +0.0560 | 0.4981 | 0.449 | +0.0491 |
+
+The paper's /64 beats its /42 at every horizon. Ours is **worse** than our /42
+at every horizon. This is the one headline claim of Table 3 that does not
+reproduce here, and it is consistent with section D: a longer lookback stops
+paying for us at L=336. These runs used the LayerNorm baseline, so whether
+BatchNorm rescues /64 as it rescued H=720 is untested and is the obvious next
+run.
+
+## What this changes
+
+1. **The H=720 gap was our encoder norm, not the benchmark.** Step 9's closing
+   claim is corrected in place.
+2. **"Single seed" is now quantified** rather than disclaimed, and it invalidates
+   some earlier margins.
+3. **Two Step 10 conclusions were mis-stated** because the grids were not the
+   paper's; both are corrected in place.
+4. Still open: our weak-variant columns are too strong, and /64 does not
+   reproduce.

@@ -64,11 +64,12 @@ myself against after each step. See [NOTICE.md](NOTICE.md) for attribution.
 | 7 | `model.py` | Fig 1 | Assemble the full model |
 | 8 | `train.py` | §5.2 | Training loop, MSE/MAE, early stopping |
 | 9 | `experiments/` | **Table 3** | Reproduce ETTh1 at horizons 96/192/336/720 |
-| 10 | `experiments/` | **Tables 6–7** | Channel-independence on/off, RevIN on/off, lookback sweep |
+| 10 | `experiments/` | **Tables 7, 9, 11** | Channel-independence on/off, RevIN on/off, lookback sweep |
 | 11 | `patchtst/cgm.py` | — | Apply the finished model to CGM forecasting |
 | 12 | `patchtst/pretrain.py` | **§4.2, Table 12** | Masked self-supervised pretraining, linear probing, fine-tuning |
+| 13 | `experiments/` | **Tables 9, 10, 14, Figs 4–5** | Architecture fidelity against the official code; the paper's own sweep grids |
 
-**Status: all twelve steps complete.** Every number is
+**Status: all thirteen steps complete.** Every number is
 in [RESULTS.md](RESULTS.md); each step is written up in
 [tutorial/](tutorial/) ([9](tutorial/STEP09_reproduce.md) ·
 [10](tutorial/STEP10_ablations.md) · [11](tutorial/STEP11_cgm.md) ·
@@ -92,6 +93,11 @@ never sampled. The claim reproduces; my sampling did not.
 
 ![Channel independence, RevIN, and the look-back sweep at both horizons](figures/f4_ablations.png)
 
+The residual H=720 gap turned out to be an encoder detail, not the benchmark:
+the official code normalizes with BatchNorm where mine used LayerNorm.
+
+![MSE by encoder variant, and the checkpoint-selection error each one leaves at T=720](figures/f8_architecture.png)
+
 All seven figures, with the tables they come from, are in
 [RESULTS.md](RESULTS.md); `python experiments/figures.py` redraws every one of
 them from the committed result JSONs. The plotting follows the paper's own
@@ -101,16 +107,22 @@ six-line `visual()` for the forecast panels.
 Four findings, none of them a clean win:
 
 - **Step 9 — ETTh1.** Three of four horizons land within 0.01 MSE of the paper
-  (96 and 192 slightly below it). H=720 misses by +0.049 — traced to checkpoint
-  selection, not the implementation: 0.047 of that gap is validation stopping at
-  epoch 2 while test error keeps falling to epoch 10.
+  (96 and 192 slightly below it). H=720 misses by +0.049, and 0.047 of that is
+  validation stopping at epoch 2 while test error keeps falling to epoch 10.
+  I concluded that the fault lay with the benchmark's validation split rather
+  than my code. **Step 13 proved that wrong**: the official encoder uses
+  BatchNorm where mine used LayerNorm, and switching it drops the selection
+  error at H=720 from 0.0473 to 0.0005 and the score to 0.4507 against the
+  paper's 0.449. The diagnosis was right; the attribution was not.
 - **Step 10 — ablations.** RevIN reproduces. The lookback claim reproduces once
   the sweep covers the paper's full range: MSE falls monotonically from 0.4386 at
   L=24 to 0.3720 at L=336. My first sweep started at L=96 and reported the claim
   as holding only "in direction" — it had measured the flat tail, since almost
   all of the improvement (0.4386 → 0.3873) happens over L=24…96. A reminder that
-  where you sample decides what you conclude. Channel independence does **not**
-  reproduce Table 7 here: mixing ties at short horizons and wins at long ones.
+  where you sample decides what you conclude. Channel independence looked like a
+  failure to reproduce Table 7 until Step 13 filled in the missing cells: the
+  paper's own Table 10 has CI-*without*-patching beating its full model on ETTh1
+  at every horizon, and so do we at the long ones. It reproduces.
 - **Step 11 — CGM.** Channel mixing beats independence when `meal`/`bolus`
   causally drive `cgm` — but it also wins in the zeroed-driver control, and it
   carries 4.4% more parameters. Most of the apparent gain is capacity, not
@@ -121,10 +133,20 @@ Four findings, none of them a clean win:
   arm lost 0.219 MSE to checkpoint selection alone — validation kept epoch 13
   where test's best was epoch 2 — and that single error produced the entire
   apparent win. ETTh1's validation split disagrees with its test split, worse as
-  the horizon grows.
+  the horizon grows — though Step 13 shows how much of that disagreement was the
+  encoder norm rather than the dataset.
+- **Step 13 — architecture fidelity and the paper's own grids.** 98 runs. Four
+  upstream defaults I had never matched, tested one at a time: three do nothing,
+  and **BatchNorm does everything** — with all five upstream choices, H=720 lands
+  at 0.4477 against the paper's 0.449. Five seeds put a number on the noise
+  (H=720 std 0.017, individual runs spanning 0.4641–0.5052), which invalidates
+  some earlier margins. Re-running Step 10's sweeps on the paper's actual grids
+  corrected two conclusions. Still open: PatchTST/64 does not reproduce.
 
-Everything here is a **single seed**. Differences under ~0.01 MSE are not
-separable from seed noise and should not be read as wins.
+Seed noise is now measured rather than disclaimed (Step 13, five seeds): at
+H=96–336 anything under ~0.007 MSE is noise, and at H=720 anything under ~0.034
+is. Several margins reported earlier in this repo do not clear that bar, and are
+flagged where they appear.
 
 The repo also records the mistakes: four bugs in my own test and collation code
 that would each have shipped a plausible wrong number, written up where they
